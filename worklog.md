@@ -102,3 +102,27 @@ Stage Summary:
 - Image optimization: client-side canvas resize + JPEG 60% quality + server-side sharp fallback
 - Local dev uses SQLite, Vercel build auto-switches to PostgreSQL
 - Photo save flow verified working end-to-end
+
+---
+Task ID: 5
+Agent: Main Agent
+Task: Switch from base64 image storage to Cloudinary for photo management
+
+Work Log:
+- Installed cloudinary@2.10.0 SDK
+- Removed sharp dependency (Cloudinary handles server-side optimization)
+- Created src/lib/cloudinary.ts with upload, delete, and URL optimization utilities
+- Updated src/app/api/clothing/route.ts: upload to Cloudinary with auto-optimization (600x800 limit, auto quality, auto format)
+- Updated src/app/api/clothing/[id]/route.ts: delete from Cloudinary when item is deleted
+- Added Cloudinary env vars to .env (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)
+- Added fallback: if Cloudinary not configured, falls back to base64 storage with console warning
+- Client-side image-utils.ts kept for pre-upload optimization (reduces upload bandwidth)
+- Lint passed, dev server running cleanly
+- Need user to create Cloudinary account and add credentials
+
+Stage Summary:
+- Cloudinary integration complete with upload, delete, and URL optimization
+- Auto-optimization: resize to max 600x800, auto quality, auto format
+- Graceful fallback to base64 if Cloudinary not configured
+- Client-side pre-compression still active (reduces upload time)
+- Removed sharp (no longer needed - Cloudinary handles server-side optimization)

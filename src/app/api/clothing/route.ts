@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
-import sharp from 'sharp'
+import { uploadToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary'
 
 export async function GET(request: Request) {
   try {
@@ -63,25 +63,24 @@ export async function POST(request: Request) {
       )
     }
 
-    // Convert image to base64 data URL for database storage (Vercel-compatible)
+    // Convert image to buffer
     const bytes = await imageFile.arrayBuffer()
     const buffer = Buffer.from(bytes)
 
-    // Server-side optimization: resize to max 600x800 and compress as JPEG
-    // This acts as a safety net even if client-side optimization fails
-    let optimizedBuffer: Buffer
-    try {
-      optimizedBuffer = await sharp(buffer)
-        .resize(600, 800, { fit: 'inside', withoutEnlargement: true })
-        .jpeg({ quality: 60 })
-        .toBuffer()
-    } catch {
-      // If sharp fails (e.g., already a small JPEG), use original
-      optimizedBuffer = buffer
-    }
+    let imagePath: string
 
-    const base64Data = optimizedBuffer.toString('base64')
-    const imagePath = `data:image/jpeg;base64,${base64Data}`
+    if (isCloudinaryConfigured()) {
+      // Upload to Cloudinary - it handles optimization automatically
+      const result = await uploadToCloudinary(buffer, {
+        folder: 'dressmemo',
+      })
+      imagePath = result.url
+    } else {
+      // Fallback: store as base64 data URL (for local dev without Cloudinary)
+      console.warn('Cloudinary not configured — storing image as base64 in database. Set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET in .env to use Cloudinary.')
+      const base64Data = buffer.toString('base64')
+      imagePath = `data:image/jpeg;base64,${base64Data}`
+    }
 
     // Parse tags
     let tags: string[] = []

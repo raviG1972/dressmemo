@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { deleteFromCloudinary } from '@/lib/cloudinary'
 
 export async function DELETE(
   request: Request,
@@ -24,7 +25,12 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Delete from database (image is stored as base64 in DB, no filesystem cleanup needed)
+    // Delete image from Cloudinary if it's a Cloudinary URL
+    if (item.imagePath && item.imagePath.includes('cloudinary.com')) {
+      await deleteFromCloudinary(item.imagePath)
+    }
+
+    // Delete from database
     await db.clothingItem.delete({ where: { id } })
 
     return NextResponse.json({ ok: true, deleted: item })
