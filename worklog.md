@@ -81,3 +81,24 @@ Stage Summary:
 - All auth API endpoints verified working: register POST 200, login POST 200
 - Code pushed to GitHub at raviG1972/dressmemo
 - Note: For Vercel deployment, will need to switch provider to "postgresql" and set proper DATABASE_URL
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Fix photo saving and add image optimization
+
+Work Log:
+- Identified that photos weren't saving due to: (1) base64 images from phone cameras are too large (5-10MB), exceeding Vercel's 4.5MB serverless body limit; (2) SQLite→PostgreSQL switch broke local database access
+- Created src/lib/image-utils.ts with client-side optimization: resize to max 600x800, compress to JPEG 60% quality
+- Updated SaveOutfitView.tsx: optimize both split halves and full outfit images before upload
+- Updated AddClothingDialog.tsx: optimize image before sending to API
+- Updated clothing API route: added server-side sharp optimization as safety net
+- Fixed local dev: reverted schema to sqlite, vercel-build script auto-switches to postgresql via sed
+- Tested full flow: register → login → upload photo → verify storage → retrieve items - all working
+- A typical 5MB phone photo becomes ~30-80KB (100x smaller!)
+- Pushed to GitHub
+
+Stage Summary:
+- Image optimization: client-side canvas resize + JPEG 60% quality + server-side sharp fallback
+- Local dev uses SQLite, Vercel build auto-switches to PostgreSQL
+- Photo save flow verified working end-to-end
