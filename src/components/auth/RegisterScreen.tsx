@@ -50,6 +50,7 @@ export default function RegisterScreen() {
               src="/banner.png"
               alt="DressMemo - Weekly outfit planner"
               fill
+              sizes="(max-width: 384px) 100vw, 384px"
               className="object-cover object-top"
               priority
             />

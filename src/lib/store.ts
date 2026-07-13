@@ -90,7 +90,7 @@ export interface Coupon {
   storeOffer: StoreOffer
 }
 
-export type AppView = 'calendar' | 'wardrobe' | 'outfit-builder' | 'offers' | 'store-dashboard' | 'profile' | 'login' | 'register'
+export type AppView = 'home' | 'save-outfit' | 'match-suit' | 'event-memo' | 'events-calendar' | 'wardrobe' | 'wore-calendar' | 'offers' | 'accessories' | 'store-dashboard' | 'profile' | 'login' | 'register'
 
 // Helper: map backend calendar event to frontend format
 function mapCalendarEvent(raw: Record<string, unknown>): CalendarEvent {
@@ -240,7 +240,7 @@ interface AppState {
 export const useStore = create<AppState>((set, get) => ({
   user: null,
   isAuthenticated: false,
-  currentView: 'calendar',
+  currentView: 'home',
   selectedDate: new Date(),
   clothingItems: [],
   outfits: {},
@@ -339,7 +339,7 @@ export const useStore = create<AppState>((set, get) => ({
       })
       const data = await res.json()
       if (res.ok && data.user) {
-        set({ user: data.user, isAuthenticated: true, currentView: 'calendar', isLoading: false })
+        set({ user: data.user, isAuthenticated: true, currentView: 'home', isLoading: false })
         return true
       }
       set({ isLoading: false })
@@ -360,7 +360,7 @@ export const useStore = create<AppState>((set, get) => ({
       })
       const data = await res.json()
       if (res.ok && data.user) {
-        set({ user: data.user, isAuthenticated: true, currentView: 'calendar', isLoading: false })
+        set({ user: data.user, isAuthenticated: true, currentView: 'home', isLoading: false })
         return true
       }
       set({ isLoading: false })
@@ -377,7 +377,7 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.ok) {
         const data = await res.json()
         if (data.user) {
-          set({ user: data.user, isAuthenticated: true, currentView: 'calendar' })
+          set({ user: data.user, isAuthenticated: true, currentView: 'home' })
           return
         }
       }

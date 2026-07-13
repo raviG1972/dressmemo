@@ -61,15 +61,16 @@ const tagOptions = [
 interface AddClothingDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
+  defaultCategory?: ClothingCategory
 }
 
-export default function AddClothingDialog({ open, onOpenChange }: AddClothingDialogProps) {
+export default function AddClothingDialog({ open, onOpenChange, defaultCategory }: AddClothingDialogProps) {
   const { addClothingItem } = useStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
 
   const [imageFile, setImageFile] = useState<File | null>(null)
   const [imagePreview, setImagePreview] = useState<string | null>(null)
-  const [category, setCategory] = useState<ClothingCategory | null>(null)
+  const [category, setCategory] = useState<ClothingCategory | null>(defaultCategory || null)
   const [subType, setSubType] = useState<string>('')
   const [color, setColor] = useState<string>('')
   const [size, setSize] = useState<string>('')
