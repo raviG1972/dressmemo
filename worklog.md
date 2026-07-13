@@ -109,20 +109,24 @@ Agent: Main Agent
 Task: Switch from base64 image storage to Cloudinary for photo management
 
 Work Log:
-- Installed cloudinary@2.10.0 SDK
-- Removed sharp dependency (Cloudinary handles server-side optimization)
 - Created src/lib/cloudinary.ts with upload, delete, and URL optimization utilities
+- Initially used cloudinary SDK, then replaced with direct HTTP API (lighter weight, no SDK dependency)
+- Removed sharp dependency (Cloudinary handles server-side optimization)
 - Updated src/app/api/clothing/route.ts: upload to Cloudinary with auto-optimization (600x800 limit, auto quality, auto format)
 - Updated src/app/api/clothing/[id]/route.ts: delete from Cloudinary when item is deleted
-- Added Cloudinary env vars to .env (CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)
+- Added Cloudinary env vars to .env with user's credentials (CLOUDINARY_CLOUD_NAME=dgri2cyzr)
 - Added fallback: if Cloudinary not configured, falls back to base64 storage with console warning
 - Client-side image-utils.ts kept for pre-upload optimization (reduces upload bandwidth)
-- Lint passed, dev server running cleanly
-- Need user to create Cloudinary account and add credentials
+- Verified Cloudinary direct HTTP API upload works (test image uploaded and deleted)
+- Verified full e2e: register → login → upload photo → Cloudinary URL stored in DB
+- Agent-browser verified all views render correctly (login, dashboard, wardrobe, save outfit, etc.)
+- Pushed to GitHub
 
 Stage Summary:
-- Cloudinary integration complete with upload, delete, and URL optimization
-- Auto-optimization: resize to max 600x800, auto quality, auto format
+- Cloudinary integration using direct HTTP API (no SDK dependency)
+- Auto-optimization: resize to max 600x800, auto quality, auto format via Cloudinary transformation
 - Graceful fallback to base64 if Cloudinary not configured
 - Client-side pre-compression still active (reduces upload time)
-- Removed sharp (no longer needed - Cloudinary handles server-side optimization)
+- Removed sharp and cloudinary SDK packages (leaner dependency tree)
+- Cloudinary credentials configured in .env
+- Verified: image uploaded → stored as Cloudinary URL in DB → displayed correctly
