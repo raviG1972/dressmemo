@@ -1,12 +1,8 @@
-import { v2 as cloudinary } from 'cloudinary'
-
-// Configure Cloudinary from environment variables
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-  secure: true,
-})
+/**
+ * Cloudinary upload utility using direct HTTP API.
+ * No SDK dependency — just fetch calls to Cloudinary REST API.
+ * This keeps the bundle small and avoids compilation memory issues.
+ */
 
 /**
  * Check if Cloudinary is properly configured
@@ -20,9 +16,9 @@ export function isCloudinaryConfigured(): boolean {
 }
 
 /**
- * Upload an image buffer to Cloudinary.
- * Automatically optimizes the image: resizes to max 600x800, converts to JPEG with auto quality.
- * Returns the Cloudinary secure URL.
+ * Upload an image buffer to Cloudinary using the REST API.
+ * Auto-optimization: resize to max 600x800, auto quality, auto format.
+ * Returns the Cloudinary secure URL and public ID.
  */
 export async function uploadToCloudinary(
   buffer: Buffer,
@@ -31,37 +27,67 @@ export async function uploadToCloudinary(
     publicId?: string
   }
 ): Promise<{ url: string; publicId: string }> {
+  const cloudName = process.env.CLOUDINARY_CLOUD_NAME!
+  const apiKey = process.env.CLOUDINARY_API_KEY!
+  const apiSecret = process.env.CLOUDINARY_API_SECRET!
   const folder = options?.folder || 'dressmemo'
   const publicId = options?.publicId || `item_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
 
-  return new Promise((resolve, reject) => {
-    const uploadStream = cloudinary.uploader.upload_stream(
-      {
-        folder,
-        public_id: publicId,
-        transformation: [
-          { width: 600, height: 800, crop: 'limit' },
-          { quality: 'auto:good' },
-          { fetch_format: 'auto' },
-        ],
-        overwrite: true,
-        resource_type: 'image',
+  // Build the unsigned upload using the upload endpoint with signature
+  const timestamp = Math.floor(Date.now() / 1000).toString()
+
+  // Generate signature string
+  const crypto = await import('crypto')
+  const signatureStr = `folder=${folder}&public_id=${publicId}&timestamp=${timestamp}&transformation=w_600,h_800,c_limit,q_auto:good,f_auto${apiSecret}`
+  const signature = crypto.createHash('sha1').update(signatureStr).digest('hex')
+
+  // Build multipart form data
+  const boundary = '----CloudinaryUpload' + Date.now()
+  const parts: Buffer[] = []
+
+  const addField = (name: string, value: string) => {
+    parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="${name}"\r\n\r\n${value}\r\n`))
+  }
+
+  addField('folder', folder)
+  addField('public_id', publicId)
+  addField('timestamp', timestamp)
+  addField('api_key', apiKey)
+  addField('signature', signature)
+  addField('transformation', 'w_600,h_800,c_limit,q_auto:good,f_auto')
+
+  // Add file
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="photo.jpg"\r\nContent-Type: image/jpeg\r\n\r\n`))
+  parts.push(buffer)
+  parts.push(Buffer.from(`\r\n--${boundary}--\r\n`))
+
+  const body = Buffer.concat(parts)
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${cloudName}/image/upload`,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': `multipart/form-data; boundary=${boundary}`,
       },
-      (error, result) => {
-        if (error) {
-          reject(error)
-        } else if (result) {
-          resolve({
-            url: result.secure_url,
-            publicId: result.public_id,
-          })
-        } else {
-          reject(new Error('Cloudinary upload returned no result'))
-        }
-      }
-    )
-    uploadStream.end(buffer)
-  })
+      body: new Uint8Array(body),
+    }
+  )
+
+  if (!response.ok) {
+    const errorText = await response.text()
+    throw new Error(`Cloudinary upload failed: ${response.status} ${errorText}`)
+  }
+
+  const result = await response.json() as {
+    secure_url: string
+    public_id: string
+  }
+
+  return {
+    url: result.secure_url,
+    publicId: result.public_id,
+  }
 }
 
 /**
@@ -71,7 +97,29 @@ export async function deleteFromCloudinary(imagePath: string): Promise<void> {
   try {
     const publicId = extractPublicId(imagePath)
     if (!publicId) return
-    await cloudinary.uploader.destroy(publicId)
+
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME!
+    const apiKey = process.env.CLOUDINARY_API_KEY!
+    const apiSecret = process.env.CLOUDINARY_API_SECRET!
+
+    const timestamp = Math.floor(Date.now() / 1000).toString()
+    const crypto = await import('crypto')
+    const signatureStr = `public_id=${publicId}&timestamp=${timestamp}${apiSecret}`
+    const signature = crypto.createHash('sha1').update(signatureStr).digest('hex')
+
+    const formData = new FormData()
+    formData.append('public_id', publicId)
+    formData.append('timestamp', timestamp)
+    formData.append('api_key', apiKey)
+    formData.append('signature', signature)
+
+    await fetch(
+      `https://api.cloudinary.com/v1_1/${cloudName}/image/destroy`,
+      {
+        method: 'POST',
+        body: formData,
+      }
+    )
   } catch (error) {
     console.error('Failed to delete image from Cloudinary:', error)
     // Don't throw - we still want to delete the DB record
@@ -88,8 +136,6 @@ function extractPublicId(imagePath: string): string | null {
 
   try {
     const url = new URL(imagePath)
-    // Path format: /{cloud_name}/image/upload/v{version}/{public_id}.{format}
-    // or /{cloud_name}/image/upload/{public_id}.{format}
     const pathParts = url.pathname.split('/')
     const uploadIndex = pathParts.indexOf('upload')
     if (uploadIndex === -1) return null
@@ -109,29 +155,5 @@ function extractPublicId(imagePath: string): string | null {
     return publicIdWithExt || null
   } catch {
     return null
-  }
-}
-
-/**
- * Get an optimized URL for displaying an image.
- * Adds Cloudinary transformation parameters for optimized delivery.
- */
-export function getOptimizedUrl(imageUrl: string, options?: { width?: number; height?: number }): string {
-  if (!imageUrl || !imageUrl.includes('cloudinary.com')) return imageUrl
-
-  try {
-    const url = new URL(imageUrl)
-    // Insert transformation after /upload/
-    const uploadIndex = url.pathname.indexOf('/upload/')
-    if (uploadIndex === -1) return imageUrl
-
-    const width = options?.width || 400
-    const height = options?.height || 600
-    const transform = `w_${width},h_${height},c_limit,q_auto:good,f_auto`
-
-    url.pathname = url.pathname.replace('/upload/', `/upload/${transform}/`)
-    return url.toString()
-  } catch {
-    return imageUrl
   }
 }
