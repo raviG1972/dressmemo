@@ -25,3 +25,35 @@ Stage Summary:
 - Smart suggestions matching event tags to wardrobe + store offers
 - Store owner monetization: subscription plans (monthly/per-coupon)
 - All APIs verified working, browser tested end-to-end
+
+---
+Task ID: 3
+Agent: Vercel Deployment Prep
+Task: Prepare DressMemo for Vercel deployment - switch to PostgreSQL, base64 image storage
+
+Work Log:
+- Changed Prisma datasource from SQLite to PostgreSQL in prisma/schema.prisma
+- Converted image storage from filesystem (public/uploads/) to base64 data URLs in database
+  - Updated POST /api/clothing to store images as `data:{mimeType};base64,{data}` in imagePath field
+  - Removed `writeFile` and `path` imports from clothing route
+  - Updated DELETE /api/clothing/[id] to remove filesystem unlink logic (no longer needed)
+  - Removed `unlink` and `path` imports from clothing/[id] route
+- Verified no other API routes use filesystem writes (only clothing routes did)
+- Verified store offers API does NOT do file uploads - imageUrl is a URL string passed directly
+- Updated next.config.ts: removed `output: "standalone"`, kept `ignoreBuildErrors: true`
+- Updated package.json: added `postinstall: "prisma generate"` and `vercel-build: "prisma migrate deploy && next build"` scripts
+- Updated .env: changed DATABASE_URL to PostgreSQL placeholder
+- Ran `bun run db:generate` to regenerate Prisma client for PostgreSQL
+- Verified all frontend components use `<img>` tags (not Next.js `<Image>`), so base64 data URLs work directly
+- Verified SaveOutfitView.tsx and AddClothingDialog.tsx send images via FormData - no changes needed
+- Verified store.ts maps `imagePath` → `imageUrl` correctly - no changes needed
+- Ran `bun run lint` - passed with no errors
+- Committed and pushed to GitHub: "feat: prepare for Vercel deployment - switch to PostgreSQL, base64 image storage"
+
+Stage Summary:
+- Prisma switched from SQLite to PostgreSQL provider
+- Images stored as base64 data URLs in DB instead of filesystem (Vercel serverless compatible)
+- No filesystem I/O remaining in any API route
+- Frontend already uses `<img>` tags that handle base64 src natively
+- Vercel build scripts configured with postinstall and vercel-build
+- All changes pushed to main branch
