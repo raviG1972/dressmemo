@@ -70,7 +70,7 @@ export async function POST(request: Request) {
       attempts++
     }
 
-    const qrData = `dresslog:coupon:${code}:${storeOfferId}`
+    const qrData = `ootdoo:coupon:${code}:${storeOfferId}`
 
     const coupon = await db.coupon.create({
       data: {

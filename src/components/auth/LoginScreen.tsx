@@ -43,8 +43,8 @@ export default function LoginScreen() {
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-rose-100 mb-4">
             <Sparkles className="w-10 h-10 text-rose-500" />
           </div>
-          <h1 className="text-3xl font-bold tracking-tight text-rose-900">DressLog</h1>
-          <p className="text-rose-400 mt-1 text-sm">Your wardrobe memory</p>
+          <h1 className="text-3xl font-bold tracking-tight text-rose-900">OotDoo</h1>
+          <p className="text-rose-400 mt-1 text-sm">What's your OOTD?</p>
         </div>
 
         {/* Form */}
