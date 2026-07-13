@@ -57,3 +57,27 @@ Stage Summary:
 - Frontend already uses `<img>` tags that handle base64 src natively
 - Vercel build scripts configured with postinstall and vercel-build
 - All changes pushed to main branch
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Fix broken login/register after Vercel migration broke local database
+
+Work Log:
+- Identified root cause: Vercel deployment preparation changed .env from SQLite to fake PostgreSQL URL, and Prisma schema provider from sqlite to postgresql
+- This made the local database completely inaccessible since no PostgreSQL server exists locally
+- Restored .env to SQLite URL: DATABASE_URL="file:/home/z/my-project/db/custom.db"
+- Reverted prisma/schema.prisma provider from "postgresql" back to "sqlite"
+- Regenerated Prisma client with bun run db:generate
+- Verified database sync with bun run db:push
+- Reduced Prisma logging from query-level to error/warn only to reduce overhead
+- Added allowedDevOrigins config for cross-origin dev requests
+- Verified registration and login work correctly via curl API tests
+- Committed fix and pushed to GitHub
+
+Stage Summary:
+- Root cause: PostgreSQL migration broke local SQLite database
+- Fix: Reverted to SQLite for local development
+- All auth API endpoints verified working: register POST 200, login POST 200
+- Code pushed to GitHub at raviG1972/dressmemo
+- Note: For Vercel deployment, will need to switch provider to "postgresql" and set proper DATABASE_URL
