@@ -2,7 +2,8 @@
 
 import { useState } from 'react'
 import { motion } from 'framer-motion'
-import { Phone, Lock, Eye, EyeOff, User, MessageCircle, Sparkles } from 'lucide-react'
+import { Phone, Lock, Eye, EyeOff, User, MessageCircle } from 'lucide-react'
+import Image from 'next/image'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -42,10 +43,16 @@ export default function RegisterScreen() {
         transition={{ duration: 0.5 }}
         className="w-full max-w-sm"
       >
-        {/* Logo / Brand */}
+        {/* Banner / Brand */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-rose-100 mb-4">
-            <Sparkles className="w-10 h-10 text-rose-500" />
+          <div className="relative w-full h-40 rounded-2xl overflow-hidden mb-4 shadow-md">
+            <Image
+              src="/banner.png"
+              alt="DressMemo - Weekly outfit planner"
+              fill
+              className="object-cover object-top"
+              priority
+            />
           </div>
           <h1 className="text-3xl font-bold tracking-tight text-rose-900">DressMemo</h1>
           <p className="text-rose-400 mt-1 text-sm">Your style, remembered</p>
