@@ -14,6 +14,7 @@ import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useStore, type ClothingCategory, type ClothingSubType, type ClothingColor, type ClothingSize } from '@/lib/store'
+import { optimizeImage } from '@/lib/image-utils'
 import { toast } from 'sonner'
 
 const categoryOptions: { key: ClothingCategory; label: string; icon: string }[] = [
@@ -108,26 +109,34 @@ export default function AddClothingDialog({ open, onOpenChange, defaultCategory 
     }
 
     setIsSaving(true)
-    const success = await addClothingItem(
-      {
-        category,
-        subType,
-        color,
-        size,
-        tags: selectedTags,
-        imageUrl: '',
-        isFavorite: false,
-      },
-      imageFile
-    )
-    setIsSaving(false)
+    try {
+      // Optimize image before upload (resize + compress)
+      const optimizedFile = await optimizeImage(imageFile)
 
-    if (success) {
-      toast.success('Item added to wardrobe! 👗')
-      resetForm()
-      onOpenChange(false)
-    } else {
-      toast.error('Failed to add item. Please try again.')
+      const success = await addClothingItem(
+        {
+          category,
+          subType,
+          color,
+          size,
+          tags: selectedTags,
+          imageUrl: '',
+          isFavorite: false,
+        },
+        optimizedFile
+      )
+      setIsSaving(false)
+
+      if (success) {
+        toast.success('Item added to wardrobe! 👗')
+        resetForm()
+        onOpenChange(false)
+      } else {
+        toast.error('Failed to add item. Please try again.')
+      }
+    } catch {
+      setIsSaving(false)
+      toast.error('Failed to process image. Please try again.')
     }
   }
 

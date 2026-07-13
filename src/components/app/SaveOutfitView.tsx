@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Badge } from '@/components/ui/badge'
 import { useStore, type ClothingCategory, getDateKey } from '@/lib/store'
+import { optimizeImage, optimizeDataURL, dataURLToFile } from '@/lib/image-utils'
 import { toast } from 'sonner'
 import { format } from 'date-fns'
 
@@ -44,11 +45,11 @@ export default function SaveOutfitView() {
     reader.readAsDataURL(file)
   }, [])
 
-  const handleCutConfirm = useCallback(() => {
+  const handleCutConfirm = useCallback(async () => {
     if (!imageSrc) return
 
     const img = new Image()
-    img.onload = () => {
+    img.onload = async () => {
       const cutY = Math.round((cutPosition / 100) * img.height)
 
       // Create top portion
@@ -65,8 +66,14 @@ export default function SaveOutfitView() {
       const bottomCtx = bottomCanvas.getContext('2d')!
       bottomCtx.drawImage(img, 0, cutY, img.width, img.height - cutY, 0, 0, img.width, img.height - cutY)
 
-      setTopImageSrc(topCanvas.toDataURL('image/png'))
-      setBottomImageSrc(bottomCanvas.toDataURL('image/png'))
+      // Optimize both halves before saving
+      const [optimizedTop, optimizedBottom] = await Promise.all([
+        optimizeDataURL(topCanvas.toDataURL('image/png')),
+        optimizeDataURL(bottomCanvas.toDataURL('image/png')),
+      ])
+
+      setTopImageSrc(optimizedTop)
+      setBottomImageSrc(optimizedBottom)
       setStep('save')
     }
     img.src = imageSrc
@@ -96,9 +103,9 @@ export default function SaveOutfitView() {
     if (!imageSrc) return
     setIsSaving(true)
     try {
-      const res = await fetch(imageSrc)
-      const blob = await res.blob()
-      const file = new File([blob], 'outfit.png', { type: 'image/png' })
+      // Optimize the full image
+      const optimizedSrc = await optimizeDataURL(imageSrc)
+      const file = dataURLToFile(optimizedSrc, 'outfit.jpg')
 
       const success = await addClothingItem({
         category: 'FULL_SUIT',
@@ -126,10 +133,8 @@ export default function SaveOutfitView() {
     if (!topImageSrc || !bottomImageSrc) return
     setIsSaving(true)
     try {
-      // Save top
-      const topRes = await fetch(topImageSrc)
-      const topBlob = await topRes.blob()
-      const topFile = new File([topBlob], 'top.png', { type: 'image/png' })
+      // Save top (already optimized from handleCutConfirm)
+      const topFile = dataURLToFile(topImageSrc, 'top.jpg')
 
       const topSuccess = await addClothingItem({
         category: 'TOP',
@@ -141,10 +146,8 @@ export default function SaveOutfitView() {
         imageUrl: '',
       }, topFile)
 
-      // Save bottom
-      const bottomRes = await fetch(bottomImageSrc)
-      const bottomBlob = await bottomRes.blob()
-      const bottomFile = new File([bottomBlob], 'bottom.png', { type: 'image/png' })
+      // Save bottom (already optimized from handleCutConfirm)
+      const bottomFile = dataURLToFile(bottomImageSrc, 'bottom.jpg')
 
       const bottomSuccess = await addClothingItem({
         category: 'BOTTOM',

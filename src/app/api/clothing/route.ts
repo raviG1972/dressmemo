@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import sharp from 'sharp'
 
 export async function GET(request: Request) {
   try {
@@ -65,9 +66,22 @@ export async function POST(request: Request) {
     // Convert image to base64 data URL for database storage (Vercel-compatible)
     const bytes = await imageFile.arrayBuffer()
     const buffer = Buffer.from(bytes)
-    const base64Data = buffer.toString('base64')
-    const mimeType = imageFile.type || 'image/png'
-    const imagePath = `data:${mimeType};base64,${base64Data}`
+
+    // Server-side optimization: resize to max 600x800 and compress as JPEG
+    // This acts as a safety net even if client-side optimization fails
+    let optimizedBuffer: Buffer
+    try {
+      optimizedBuffer = await sharp(buffer)
+        .resize(600, 800, { fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 60 })
+        .toBuffer()
+    } catch {
+      // If sharp fails (e.g., already a small JPEG), use original
+      optimizedBuffer = buffer
+    }
+
+    const base64Data = optimizedBuffer.toString('base64')
+    const imagePath = `data:image/jpeg;base64,${base64Data}`
 
     // Parse tags
     let tags: string[] = []
