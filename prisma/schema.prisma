@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String       @id @default(cuid())
+  phone         String       @unique
+  password      String
+  name          String?
+  agreeOffers   Boolean      @default(false)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  clothingItems ClothingItem[]
+  outfits       Outfit[]
+  sessions      Session[]
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ClothingItem {
+  id         String   @id @default(cuid())
+  userId     String
+  category   String   // TOP, BOTTOM, FULL_SUIT, SHOES, ACCESSORY
+  subType    String?  // e.g., shirt, blouse, jeans, skirt, saree, dress, sneakers, heels, watch, necklace
+  imagePath  String
+  color      String?
+  size       String?
+  tags       String   @default("[]") // JSON array of tags like ["white","XL","short sleeves","V neck"]
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Outfit {
+  id        String       @id @default(cuid())
+  userId    String
+  name      String?      // e.g., "Office Meeting", "Friday Casual"
+  eventNote String?      // e.g., "Client presentation"
+  date      DateTime     // The day this outfit is planned/worn
+  items     OutfitItem[]
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model OutfitItem {
+  id          String       @id @default(cuid())
+  outfitId    String
+  topId       String?      // ClothingItem id of category TOP
+  bottomId    String?      // ClothingItem id of category BOTTOM
+  fullSuitId  String?      // ClothingItem id of category FULL_SUIT (saree, dress, etc.)
+  shoeId      String?      // ClothingItem id of category SHOES
+  accessoryId String?      // ClothingItem id of category ACCESSORY
+  outfit      Outfit       @relation(fields: [outfitId], references: [id], onDelete: Cascade)
+}
