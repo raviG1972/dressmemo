@@ -8,6 +8,7 @@ import RegisterScreen from '@/components/auth/RegisterScreen'
 import CalendarView from '@/components/app/CalendarView'
 import WardrobeView from '@/components/app/WardrobeView'
 import OutfitBuilderView from '@/components/app/OutfitBuilderView'
+import OffersView from '@/components/app/OffersView'
 import ProfileView from '@/components/app/ProfileView'
 import BottomNav from '@/components/app/BottomNav'
 
@@ -84,6 +85,17 @@ export default function Home() {
               transition={{ duration: 0.2 }}
             >
               <OutfitBuilderView />
+            </motion.div>
+          )}
+          {currentView === 'offers' && (
+            <motion.div
+              key="offers"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.2 }}
+            >
+              <OffersView />
             </motion.div>
           )}
           {currentView === 'profile' && (

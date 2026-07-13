@@ -2,19 +2,27 @@
 
 import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
-import { LogOut, MessageCircle, Shirt, CalendarDays, Settings } from 'lucide-react'
+import { LogOut, MessageCircle, Shirt, CalendarDays, Settings, Ticket } from 'lucide-react'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Switch } from '@/components/ui/switch'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { useStore } from '@/lib/store'
 import { toast } from 'sonner'
+import MyCouponsView from './MyCouponsView'
 
 export default function ProfileView() {
-  const { user, logout, clothingItems, outfits, fetchClothingItems } = useStore()
+  const { user, logout, clothingItems, outfits, coupons, fetchClothingItems, fetchCoupons } = useStore()
   const [agreeOffers, setAgreeOffers] = useState(user?.agreeOffers ?? true)
+  const [couponsDialogOpen, setCouponsDialogOpen] = useState(false)
 
   // Count total outfits
   const totalOutfits = Object.values(outfits).reduce((sum, dayOutfits) => sum + dayOutfits.length, 0)
@@ -22,6 +30,13 @@ export default function ProfileView() {
   useEffect(() => {
     fetchClothingItems()
   }, [fetchClothingItems])
+
+  // Fetch coupons count
+  useEffect(() => {
+    fetchCoupons()
+  }, [fetchCoupons])
+
+  const activeCoupons = coupons.filter(c => c.status === 'active')
 
   const handleToggleOffers = async (checked: boolean) => {
     setAgreeOffers(checked)
@@ -97,6 +112,24 @@ export default function ProfileView() {
             </Card>
           </div>
 
+          {/* My Coupons */}
+          <Card className="border-amber-100 cursor-pointer hover:border-amber-300 transition-colors" onClick={() => setCouponsDialogOpen(true)}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
+                <Ticket className="w-5 h-5 text-amber-500" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-semibold text-amber-900">My Coupons</p>
+                <p className="text-xs text-muted-foreground">
+                  {activeCoupons.length} active coupon{activeCoupons.length !== 1 ? 's' : ''}
+                </p>
+              </div>
+              <Button variant="ghost" size="sm" className="text-amber-500 hover:text-amber-600">
+                View →
+              </Button>
+            </CardContent>
+          </Card>
+
           {/* Settings */}
           <Card className="border-rose-100">
             <CardContent className="p-4 space-y-4">
@@ -133,6 +166,13 @@ export default function ProfileView() {
           </Button>
         </motion.div>
       </div>
+
+      {/* Coupons Dialog */}
+      <Dialog open={couponsDialogOpen} onOpenChange={setCouponsDialogOpen}>
+        <DialogContent className="sm:max-w-md max-h-[80vh] overflow-y-auto p-0">
+          <MyCouponsView />
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
