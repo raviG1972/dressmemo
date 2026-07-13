@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
-import { unlink } from 'fs/promises'
-import path from 'path'
 
 export async function DELETE(
   request: Request,
@@ -26,16 +24,7 @@ export async function DELETE(
       return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
     }
 
-    // Try to delete the image file from filesystem
-    try {
-      const filePath = path.join(process.cwd(), 'public', item.imagePath)
-      await unlink(filePath)
-    } catch (fsError) {
-      // Ignore filesystem errors - file may already be deleted
-      console.warn('Could not delete image file:', fsError)
-    }
-
-    // Delete from database
+    // Delete from database (image is stored as base64 in DB, no filesystem cleanup needed)
     await db.clothingItem.delete({ where: { id } })
 
     return NextResponse.json({ ok: true, deleted: item })

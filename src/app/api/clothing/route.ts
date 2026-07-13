@@ -1,8 +1,6 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
-import { writeFile } from 'fs/promises'
-import path from 'path'
 
 export async function GET(request: Request) {
   try {
@@ -64,18 +62,12 @@ export async function POST(request: Request) {
       )
     }
 
-    // Save image to public/uploads
+    // Convert image to base64 data URL for database storage (Vercel-compatible)
     const bytes = await imageFile.arrayBuffer()
     const buffer = Buffer.from(bytes)
-
-    const ext = imageFile.name.split('.').pop() || 'png'
-    const uniqueName = `${crypto.randomUUID()}.${ext}`
-    const uploadsDir = path.join(process.cwd(), 'public', 'uploads')
-    const filePath = path.join(uploadsDir, uniqueName)
-
-    await writeFile(filePath, buffer)
-
-    const imagePath = `/uploads/${uniqueName}`
+    const base64Data = buffer.toString('base64')
+    const mimeType = imageFile.type || 'image/png'
+    const imagePath = `data:${mimeType};base64,${base64Data}`
 
     // Parse tags
     let tags: string[] = []
