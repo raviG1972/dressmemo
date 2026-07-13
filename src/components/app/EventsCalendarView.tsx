@@ -1,11 +1,11 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { motion } from 'framer-motion'
-import { ArrowLeft, CalendarDays, Clock, MapPin, Shirt } from 'lucide-react'
-import { useStore, getDateKey } from '@/lib/store'
+import { ArrowLeft, Clock, MapPin, Shirt } from 'lucide-react'
+import { useStore } from '@/lib/store'
 import { format } from 'date-fns'
 import { DayPicker } from 'react-day-picker'
+import 'react-day-picker/style.css'
 import { Badge } from '@/components/ui/badge'
 
 export default function EventsCalendarView() {
@@ -40,7 +40,8 @@ export default function EventsCalendarView() {
         <DayPicker
           month={month}
           onMonthChange={setMonth}
-          className="mx-auto"
+          navLayout="around"
+          className="mx-auto rdp-root"
           modifiers={{
             hasEvent: (date) => eventDays.has(format(date, 'yyyy-MM-dd')),
             hasOutfit: (date) => outfitDays.has(format(date, 'yyyy-MM-dd')),
@@ -52,22 +53,22 @@ export default function EventsCalendarView() {
           classNames={{
             months: 'flex flex-col',
             month: 'space-y-4',
-            caption: 'flex justify-center pt-1 relative items-center',
+            month_caption: 'flex justify-center pt-1 relative items-center h-8',
             caption_label: 'text-sm font-medium text-rose-900',
             nav: 'space-x-1 flex items-center',
-            nav_button: 'h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 inline-flex items-center justify-center rounded-md',
-            nav_button_previous: 'absolute left-1',
-            nav_button_next: 'absolute right-1',
-            table: 'w-full border-collapse space-y-1',
-            head_row: 'flex',
-            head_cell: 'text-rose-400 rounded-md w-9 font-normal text-[10px]',
-            row: 'flex w-full mt-2',
-            cell: 'text-center text-sm p-0 relative h-9 w-9',
-            day: 'h-9 w-9 p-0 font-normal rounded-lg hover:bg-rose-50 transition-colors inline-flex items-center justify-center text-sm',
-            day_selected: 'bg-rose-500 text-white hover:bg-rose-600',
-            day_today: 'bg-rose-50 font-bold text-rose-900',
-            day_outside: 'text-muted-foreground opacity-40',
-            day_disabled: 'text-muted-foreground opacity-40',
+            button_previous: 'h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 inline-flex items-center justify-center rounded-md',
+            button_next: 'h-7 w-7 bg-transparent p-0 opacity-50 hover:opacity-100 inline-flex items-center justify-center rounded-md',
+            month_grid: 'w-full border-collapse',
+            weekdays: 'flex w-full',
+            weekday: 'text-rose-400 rounded-md w-9 font-normal text-[10px] flex items-center justify-center',
+            week: 'flex w-full mt-2',
+            day: 'text-center text-sm p-0 relative h-9 w-9 flex items-center justify-center',
+            day_button: 'h-9 w-9 p-0 font-normal rounded-lg hover:bg-rose-50 transition-colors inline-flex items-center justify-center text-sm',
+            selected: 'bg-rose-500 text-white hover:bg-rose-600 rounded-lg',
+            today: 'bg-rose-50 font-bold text-rose-900 rounded-lg',
+            outside: 'text-muted-foreground opacity-40',
+            disabled: 'text-muted-foreground opacity-40',
+            hidden: 'invisible',
           }}
         />
         <div className="flex items-center gap-4 justify-center mt-2">

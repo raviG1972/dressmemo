@@ -55,7 +55,7 @@ export async function GET(request: Request) {
       include: { store: true },
     })
 
-    const matchedStoreOffers = storeOffers.filter(offer => {
+    const filteredOffers = storeOffers.filter(offer => {
       let offerTags: string[] = []
       try {
         offerTags = JSON.parse(offer.tags).map((t: string) => t.toLowerCase())
@@ -66,7 +66,7 @@ export async function GET(request: Request) {
       return eventTags.some(et => offerTags.some(ot => ot.includes(et) || et.includes(ot)))
     })
 
-    const matchedStoreOffers = storeOffers.map(offer => {
+    const matchedStoreOffers = filteredOffers.map(offer => {
       const { password: _, ...safeStore } = offer.store as Record<string, unknown>
       return { ...offer, store: safeStore }
     })
