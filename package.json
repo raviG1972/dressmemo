@@ -12,7 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:reset": "prisma migrate reset",
     "postinstall": "prisma generate",
-    "vercel-build": "sed -i 's/provider = \"sqlite\"/provider = \"postgresql\"/' prisma/schema.prisma && prisma generate && prisma db push --accept-data-loss && next build"
+    "vercel-build": "if echo \"$DATABASE_URL\" | grep -q '^postgres'; then sed -i 's/provider = \"sqlite\"/provider = \"postgresql\"/' prisma/schema.prisma && prisma generate && prisma db push --accept-data-loss; else prisma generate; fi && next build"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
