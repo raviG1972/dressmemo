@@ -1,11 +1,11 @@
 'use client'
 
-import { Home, CalendarDays, Shirt, Layers, ShoppingBag, User } from 'lucide-react'
+import { CalendarDays, Shirt, Layers, ShoppingBag, User } from 'lucide-react'
 import { useStore, type AppView } from '@/lib/store'
 import { cn } from '@/lib/utils'
 
-const navItems: { view: AppView; icon: typeof Home; label: string }[] = [
-  { view: 'home', icon: Home, label: 'Home' },
+const navItems: { view: AppView; icon: typeof CalendarDays; label: string }[] = [
+  { view: 'home', icon: CalendarDays, label: 'Calendar' },
   { view: 'wardrobe', icon: Shirt, label: 'Wardrobe' },
   { view: 'match-suit', icon: Layers, label: 'Match' },
   { view: 'offers', icon: ShoppingBag, label: 'Offers' },
@@ -17,9 +17,10 @@ export default function BottomNav() {
 
   // Map sub-views to their parent nav item for highlighting
   const getActiveNav = (view: AppView): AppView => {
-    if (['save-outfit', 'match-suit', 'outfit-builder'].includes(view)) return 'match-suit'
-    if (['event-memo', 'events-calendar', 'wore-calendar'].includes(view)) return 'home'
+    if (['day-gallery', 'save-outfit', 'process-outfit'].includes(view)) return 'home'
+    if (['match-suit', 'outfit-builder'].includes(view)) return 'match-suit'
     if (view === 'accessories') return 'wardrobe'
+    if (['event-memo', 'events-calendar', 'wore-calendar'].includes(view)) return 'home'
     if (['home', 'wardrobe', 'offers', 'profile'].includes(view)) return view
     return 'home'
   }

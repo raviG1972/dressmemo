@@ -10,24 +10,19 @@ export async function GET(request: Request) {
     }
 
     const { searchParams } = new URL(request.url)
-    const dateStr = searchParams.get('date')
+    const year = parseInt(searchParams.get('year') || '')
+    const month = parseInt(searchParams.get('month') || '') // 0-indexed
 
-    if (!dateStr) {
+    if (isNaN(year) || isNaN(month) || month < 0 || month > 11) {
       return NextResponse.json(
-        { error: 'Date query parameter is required (YYYY-MM-DD)' },
+        { error: 'Valid year and month (0-11) are required' },
         { status: 400 }
       )
     }
 
-    const startDate = new Date(dateStr + 'T00:00:00.000Z')
-    const endDate = new Date(dateStr + 'T23:59:59.999Z')
-
-    if (isNaN(startDate.getTime()) || isNaN(endDate.getTime())) {
-      return NextResponse.json(
-        { error: 'Invalid date format. Use YYYY-MM-DD' },
-        { status: 400 }
-      )
-    }
+    // Get first and last day of the month
+    const startDate = new Date(year, month, 1)
+    const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999)
 
     const outfits = await db.outfit.findMany({
       where: {
@@ -35,12 +30,20 @@ export async function GET(request: Request) {
         date: { gte: startDate, lte: endDate },
       },
       include: { items: true },
-      orderBy: { time: 'asc' },
+      orderBy: [{ date: 'asc' }, { time: 'asc' }],
     })
 
-    return NextResponse.json({ outfits })
+    // Also get unprocessed count
+    const unprocessedCount = await db.outfit.count({
+      where: {
+        userId: user.id,
+        processed: false,
+      },
+    })
+
+    return NextResponse.json({ outfits, unprocessedCount })
   } catch (error) {
-    console.error('Outfits by-date error:', error)
+    console.error('Outfits by-month error:', error)
     return NextResponse.json(
       { error: 'Internal server error' },
       { status: 500 }

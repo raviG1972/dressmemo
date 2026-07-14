@@ -31,9 +31,14 @@ export interface OutfitItem {
 export interface Outfit {
   id: string
   userId: string
+  imageUrl: string // mapped from imagePath in backend
+  name: string | null
+  caption: string | null
+  time: string | null
+  reasonTag: string | null
+  reasonText: string | null
   date: string
-  name: string
-  eventNote: string | null
+  processed: boolean
   items: OutfitItem[]
   createdAt: string
 }
@@ -90,7 +95,7 @@ export interface Coupon {
   storeOffer: StoreOffer
 }
 
-export type AppView = 'home' | 'save-outfit' | 'match-suit' | 'event-memo' | 'events-calendar' | 'wardrobe' | 'wore-calendar' | 'offers' | 'accessories' | 'store-dashboard' | 'profile' | 'login' | 'register'
+export type AppView = 'home' | 'day-gallery' | 'save-outfit' | 'process-outfit' | 'match-suit' | 'event-memo' | 'events-calendar' | 'wardrobe' | 'wore-calendar' | 'offers' | 'accessories' | 'store-dashboard' | 'profile' | 'login' | 'register'
 
 // Helper: map backend calendar event to frontend format
 function mapCalendarEvent(raw: Record<string, unknown>): CalendarEvent {
@@ -191,9 +196,14 @@ function mapOutfit(raw: Record<string, unknown>): Outfit {
   return {
     id: raw.id as string,
     userId: raw.userId as string,
+    imageUrl: (raw.imagePath as string) || '',
+    name: (raw.name as string) || null,
+    caption: (raw.caption as string) || null,
+    time: (raw.time as string) || null,
+    reasonTag: (raw.reasonTag as string) || null,
+    reasonText: (raw.reasonText as string) || null,
     date: raw.date ? format(new Date(raw.date as string), 'yyyy-MM-dd') : '',
-    name: (raw.name as string) || 'Outfit',
-    eventNote: (raw.eventNote as string) || null,
+    processed: (raw.processed as boolean) || false,
     items: (raw.items as OutfitItem[]) || [],
     createdAt: raw.createdAt as string,
   }
@@ -206,6 +216,7 @@ interface AppState {
   selectedDate: Date
   clothingItems: ClothingItem[]
   outfits: Record<string, Outfit[]>
+  unprocessedCount: number
   events: Record<string, CalendarEvent[]>
   storeOffers: StoreOffer[]
   coupons: Coupon[]
@@ -221,6 +232,9 @@ interface AppState {
   fetchClothingItems: (category?: string) => Promise<void>
   fetchOutfitsByDate: (dateStr: string) => Promise<void>
   fetchOutfitsByMonth: (year: number, month: number) => Promise<void>
+  addOutfit: (data: { imageFile: File; date: string; name?: string; caption?: string; time?: string; reasonTag?: string; reasonText?: string }) => Promise<boolean>
+  deleteOutfit: (outfitId: string, dateStr: string) => Promise<void>
+  markOutfitProcessed: (outfitId: string) => Promise<void>
   fetchEventsByDate: (dateStr: string) => Promise<void>
   fetchEventsByMonth: (year: number, month: number) => Promise<void>
   addEvent: (event: Omit<CalendarEvent, 'id' | 'userId' | 'createdAt'>) => Promise<boolean>
@@ -233,7 +247,6 @@ interface AppState {
   register: (phone: string, password: string, name: string, agreeOffers: boolean) => Promise<boolean>
   checkAuth: () => Promise<void>
   addClothingItem: (item: Omit<ClothingItem, 'id' | 'userId' | 'createdAt'>, imageFile: File) => Promise<boolean>
-  deleteOutfit: (outfitId: string, dateStr: string) => Promise<void>
   toggleFavorite: (itemId: string) => Promise<void>
 }
 
@@ -244,6 +257,7 @@ export const useStore = create<AppState>((set, get) => ({
   selectedDate: new Date(),
   clothingItems: [],
   outfits: {},
+  unprocessedCount: 0,
   events: {},
   storeOffers: [],
   coupons: [],
@@ -294,36 +308,25 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   fetchOutfitsByMonth: async (year: number, month: number) => {
-    // Fetch all outfits for the month by querying each day
-    // Since the backend only supports by-date queries, we query a range
     try {
-      const daysInMonth = new Date(year, month + 1, 0).getDate()
-      const promises = []
-      for (let d = 1; d <= daysInMonth; d++) {
-        const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`
-        promises.push(
-          fetch(`/api/outfits/by-date?date=${dateStr}`)
-            .then(res => res.ok ? res.json() : null)
-            .then(data => {
-              if (data?.outfits?.length) {
-                const mapped = data.outfits.map(mapOutfit)
-                return { dateStr, outfits: mapped }
-              }
-              return null
-            })
-            .catch(() => null)
-        )
+      const res = await fetch(`/api/outfits/by-month?year=${year}&month=${month}`)
+      if (res.ok) {
+        const data = await res.json()
+        const rawOutfits = data.outfits || []
+        const mapped = rawOutfits.map(mapOutfit)
+
+        // Group by date
+        const outfitsMap: Record<string, Outfit[]> = {}
+        mapped.forEach((outfit: Outfit) => {
+          if (!outfitsMap[outfit.date]) outfitsMap[outfit.date] = []
+          outfitsMap[outfit.date].push(outfit)
+        })
+
+        set((state) => ({
+          outfits: { ...state.outfits, ...outfitsMap },
+          unprocessedCount: data.unprocessedCount || 0,
+        }))
       }
-      const results = await Promise.all(promises)
-      const outfitsMap: Record<string, Outfit[]> = {}
-      results.forEach((r) => {
-        if (r && r.outfits.length > 0) {
-          outfitsMap[r.dateStr] = r.outfits
-        }
-      })
-      set((state) => ({
-        outfits: { ...state.outfits, ...outfitsMap }
-      }))
     } catch {
       // silently fail
     }
@@ -419,9 +422,60 @@ export const useStore = create<AppState>((set, get) => ({
         set((state) => {
           const dayOutfits = state.outfits[dateStr]?.filter((o) => o.id !== outfitId) || []
           return {
-            outfits: { ...state.outfits, [dateStr]: dayOutfits }
+            outfits: { ...state.outfits, [dateStr]: dayOutfits },
+            unprocessedCount: Math.max(0, state.unprocessedCount - 1),
           }
         })
+      }
+    } catch {
+      // silently fail
+    }
+  },
+
+  addOutfit: async (data) => {
+    const formData = new FormData()
+    formData.append('image', data.imageFile)
+    formData.append('date', data.date)
+    if (data.name) formData.append('name', data.name)
+    if (data.caption) formData.append('caption', data.caption)
+    if (data.time) formData.append('time', data.time)
+    if (data.reasonTag) formData.append('reasonTag', data.reasonTag)
+    if (data.reasonText) formData.append('reasonText', data.reasonText)
+
+    try {
+      const res = await fetch('/api/outfits', {
+        method: 'POST',
+        body: formData,
+      })
+      if (res.ok) {
+        const outfit = await res.json()
+        const mapped = mapOutfit(outfit)
+        set((state) => {
+          const dayOutfits = state.outfits[mapped.date] || []
+          return {
+            outfits: { ...state.outfits, [mapped.date]: [...dayOutfits, mapped] },
+            unprocessedCount: state.unprocessedCount + 1,
+          }
+        })
+        return true
+      }
+      return false
+    } catch {
+      return false
+    }
+  },
+
+  markOutfitProcessed: async (outfitId: string) => {
+    try {
+      const res = await fetch(`/api/outfits/${outfitId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ processed: true }),
+      })
+      if (res.ok) {
+        set((state) => ({
+          unprocessedCount: Math.max(0, state.unprocessedCount - 1),
+        }))
       }
     } catch {
       // silently fail

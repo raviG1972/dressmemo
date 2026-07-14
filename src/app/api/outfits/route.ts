@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { db } from '@/lib/db'
 import { getUserFromRequest } from '@/lib/auth'
+import { uploadToCloudinary, isCloudinaryConfigured } from '@/lib/cloudinary'
 
 export async function POST(request: Request) {
   try {
@@ -9,41 +10,48 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { name, eventNote, date, items } = body
+    const formData = await request.formData()
+    const imageFile = formData.get('image') as File | null
+    const date = formData.get('date') as string
+    const name = (formData.get('name') as string) || null
+    const caption = (formData.get('caption') as string) || null
+    const time = (formData.get('time') as string) || null
+    const reasonTag = (formData.get('reasonTag') as string) || null
+    const reasonText = (formData.get('reasonText') as string) || null
 
-    if (!date || !items || !Array.isArray(items) || items.length === 0) {
+    if (!imageFile || !date) {
       return NextResponse.json(
-        { error: 'Date and at least one item are required' },
+        { error: 'Image and date are required' },
         { status: 400 }
       )
+    }
+
+    // Upload image
+    const bytes = await imageFile.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+
+    let imagePath: string
+    if (isCloudinaryConfigured()) {
+      const result = await uploadToCloudinary(buffer, { folder: 'dressmemo/outfits' })
+      imagePath = result.url
+    } else {
+      const base64Data = buffer.toString('base64')
+      imagePath = `data:image/jpeg;base64,${base64Data}`
     }
 
     const outfit = await db.outfit.create({
       data: {
         userId: user.id,
-        name: name || null,
-        eventNote: eventNote || null,
+        imagePath,
+        name,
+        caption,
+        time,
+        reasonTag,
+        reasonText,
         date: new Date(date),
-        items: {
-          create: items.map((item: {
-            topId?: string | null
-            bottomId?: string | null
-            fullSuitId?: string | null
-            shoeId?: string | null
-            accessoryId?: string | null
-          }) => ({
-            topId: item.topId || null,
-            bottomId: item.bottomId || null,
-            fullSuitId: item.fullSuitId || null,
-            shoeId: item.shoeId || null,
-            accessoryId: item.accessoryId || null,
-          })),
-        },
+        processed: false,
       },
-      include: {
-        items: true,
-      },
+      include: { items: true },
     })
 
     return NextResponse.json(outfit, { status: 201 })

@@ -46,15 +46,20 @@ model ClothingItem {
 }
 
 model Outfit {
-  id        String       @id @default(cuid())
-  userId    String
-  name      String?      // e.g., "Office Meeting", "Friday Casual"
-  eventNote String?      // e.g., "Client presentation"
-  date      DateTime     // The day this outfit is planned/worn
-  items     OutfitItem[]
-  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id         String       @id @default(cuid())
+  userId     String
+  imagePath  String       // Photo of the outfit (Cloudinary URL or base64)
+  name       String?      // e.g., "Office Meeting", "Friday Casual"
+  caption    String?      // Caption beneath the photo
+  time       String?      // e.g., "9:00 AM" - when the outfit was worn
+  reasonTag  String?      // office, school, work, going out, party, wedding, etc.
+  reasonText String?      // Custom reason input
+  date       DateTime     // The day this outfit is planned/worn
+  processed  Boolean      @default(false) // Whether it's been cropped/cut into wardrobe items
+  items      OutfitItem[]
+  user       User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 }
 
 model OutfitItem {
