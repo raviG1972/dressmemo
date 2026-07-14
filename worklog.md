@@ -130,3 +130,31 @@ Stage Summary:
 - Removed sharp and cloudinary SDK packages (leaner dependency tree)
 - Cloudinary credentials configured in .env
 - Verified: image uploaded → stored as Cloudinary URL in DB → displayed correctly
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Fix Upload from Gallery, add color picker, redesign cascading tag system
+
+Work Log:
+- Fixed "Upload from Gallery" opening camera: created two separate hidden file inputs
+  - Camera input: has `capture="environment"` attribute
+  - Gallery input: no `capture` attribute, opens file picker
+- Added color picker with 23 colors (black, white, red, maroon, pink, rose, orange, peach, yellow, beige, cream, green, olive, teal, blue, navy, purple, lavender, brown, grey, silver, gold, multi)
+- Redesigned tag system with cascading selection (no typing needed):
+  - Row 1: Type (T-Shirt, Shirt, Blouse, Jacket, etc.)
+  - Row 2: Style based on type (Short/Long Sleeves, Casual/Formal, etc.)
+  - Row 3: Specific details (Round Neck, V Neck, Denim, etc.)
+  - Row 4: Season & Occasion (Casual, Formal, Summer, Winter, etc.)
+- All tag buttons enlarged (px-4 py-2.5) for better touch targets
+- Created comprehensive clothing tree for all 5 categories with 3-level cascading
+- Removed AI/VLM analyze route (user doesn't want it - slows the app)
+- Updated both AddClothingDialog and SaveOutfitView with new design
+- Pushed to GitHub
+
+Stage Summary:
+- Gallery button now correctly opens file picker (not camera)
+- Color picker with 23 colors for easy color selection
+- Cascading tag system: Type → Style → Details → Season/Occasion
+- Touch-friendly buttons (px-4 py-2.5 rounded-xl)
+- No AI integration - all manual selection, fast and responsive
