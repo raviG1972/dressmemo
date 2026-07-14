@@ -1,17 +1,120 @@
 'use client'
 
-import { useState, useRef, useCallback, useEffect } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Camera, Upload, Scissors, Check, RotateCcw, Shirt } from 'lucide-react'
+import { ArrowLeft, Camera, ImagePlus, Scissors, Check, RotateCcw, Shirt } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Badge } from '@/components/ui/badge'
-import { useStore, type ClothingCategory, getDateKey } from '@/lib/store'
-import { optimizeImage, optimizeDataURL, dataURLToFile } from '@/lib/image-utils'
+import { useStore, type ClothingCategory } from '@/lib/store'
+import { optimizeDataURL, dataURLToFile } from '@/lib/image-utils'
 import { toast } from 'sonner'
-import { format } from 'date-fns'
 
 type SaveStep = 'capture' | 'cut' | 'save'
+
+// ─── Cascading type tree for SaveOutfitView ───
+const topTypes: Record<string, Record<string, string[]>> = {
+  'T-Shirt': {
+    'Short Sleeves': ['Round Neck', 'V Neck', 'Graphic', 'Plain'],
+    'Long Sleeves': ['Round Neck', 'V Neck', 'Turtle Neck'],
+    'Sleeveless': ['Tank Top', 'Muscle Tee'],
+  },
+  'Shirt': {
+    'Short Sleeves': ['Casual', 'Formal', 'Linen'],
+    'Long Sleeves': ['Casual', 'Formal', 'Denim', 'Flannel'],
+  },
+  'Blouse': {
+    'Short Sleeves': ['Round Neck', 'V Neck', 'Ruffle'],
+    'Long Sleeves': ['Button-up', 'Wrap', 'Pleated'],
+    'Sleeveless': ['Camisole', 'Tank', 'Halter'],
+  },
+  'Jacket': {
+    'Casual': ['Denim', 'Bomber', 'Varsity'],
+    'Formal': ['Blazer', 'Sport Coat'],
+    'Winter': ['Puffer', 'Parka', 'Leather'],
+  },
+  'Sweater': {
+    'Pullover': ['Crew Neck', 'V Neck', 'Turtle Neck'],
+    'Cardigan': ['Button-up', 'Open Front'],
+  },
+  'Hoodie': {
+    'Pullover': ['Kangaroo Pocket', 'Cropped'],
+    'Zip-up': ['Full Zip', 'Half Zip'],
+  },
+}
+
+const bottomTypes: Record<string, Record<string, string[]>> = {
+  'Jeans': {
+    'Slim Fit': ['Dark Wash', 'Light Wash', 'Black'],
+    'Regular Fit': ['Straight Leg', 'Bootcut'],
+    'Skinny': ['High Rise', 'Mid Rise'],
+  },
+  'Trousers': {
+    'Formal': ['Pleated', 'Flat Front'],
+    'Casual': ['Chinos', 'Cargos', 'Corduroy'],
+  },
+  'Shorts': {
+    'Casual': ['Denim', 'Chino', 'Athletic'],
+    'Formal': ['Bermuda', 'Tailored'],
+  },
+  'Skirt': {
+    'Mini': ['A-Line', 'Pleated', 'Wrap'],
+    'Midi': ['A-Line', 'Pencil', 'Wrap'],
+    'Maxi': ['Flowy', 'Slit', 'Tiered'],
+  },
+  'Leggings': {
+    'Casual': ['Cotton', 'High Waist'],
+    'Athletic': ['Compression', 'Yoga'],
+  },
+  'Joggers': {
+    'Casual': ['Cotton', 'Fleece', 'Cuffed'],
+    'Athletic': ['Slim Fit', 'Tapered'],
+  },
+}
+
+const fullSuitTypes: Record<string, Record<string, string[]>> = {
+  'Saree': {
+    'Silk': ['Banarasi', 'Kanchipuram'],
+    'Cotton': ['Handloom', 'Printed'],
+    'Synthetic': ['Georgette', 'Chiffon', 'Crepe'],
+  },
+  'Dress': {
+    'Casual': ['T-Shirt', 'Wrap', 'Shift'],
+    'Formal': ['Cocktail', 'Evening Gown', 'Sheath'],
+    'Summer': ['Sundress', 'Maxi', 'Floral'],
+  },
+  'Jumpsuit': {
+    'Casual': ['Wide Leg', 'Slim Fit'],
+    'Formal': ['Black Tie', 'Structured'],
+  },
+  'Salwar Kameez': {
+    'Traditional': ['Anarkali', 'Straight Cut', 'A-Line'],
+    'Modern': ['Palazzo', 'Dhoti', 'Cape Style'],
+  },
+}
+
+// ─── Color palette ───
+const colorPalette = [
+  { key: 'black', label: 'Black', hex: '#1a1a1a' },
+  { key: 'white', label: 'White', hex: '#FFFFFF' },
+  { key: 'red', label: 'Red', hex: '#DC2626' },
+  { key: 'maroon', label: 'Maroon', hex: '#800000' },
+  { key: 'pink', label: 'Pink', hex: '#EC4899' },
+  { key: 'orange', label: 'Orange', hex: '#F97316' },
+  { key: 'yellow', label: 'Yellow', hex: '#EAB308' },
+  { key: 'beige', label: 'Beige', hex: '#D4A574' },
+  { key: 'cream', label: 'Cream', hex: '#FFFDD0' },
+  { key: 'green', label: 'Green', hex: '#22C55E' },
+  { key: 'olive', label: 'Olive', hex: '#808000' },
+  { key: 'teal', label: 'Teal', hex: '#14B8A6' },
+  { key: 'blue', label: 'Blue', hex: '#3B82F6' },
+  { key: 'navy', label: 'Navy', hex: '#1E3A5F' },
+  { key: 'purple', label: 'Purple', hex: '#8B5CF6' },
+  { key: 'brown', label: 'Brown', hex: '#92400E' },
+  { key: 'grey', label: 'Grey', hex: '#6B7280' },
+  { key: 'gold', label: 'Gold', hex: '#DAA520' },
+  { key: 'multi', label: 'Multi', hex: 'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f)' },
+]
+
+const seasonOccasionTags = ['Casual', 'Formal', 'Semi-Formal', 'Summer', 'Winter', 'All Season']
 
 export default function SaveOutfitView() {
   const { setView, addClothingItem } = useStore()
@@ -19,19 +122,32 @@ export default function SaveOutfitView() {
   const [imageSrc, setImageSrc] = useState<string | null>(null)
   const [topImageSrc, setTopImageSrc] = useState<string | null>(null)
   const [bottomImageSrc, setBottomImageSrc] = useState<string | null>(null)
-  const [cutPosition, setCutPosition] = useState(50) // percentage from top
+  const [cutPosition, setCutPosition] = useState(50)
   const [isDragging, setIsDragging] = useState(false)
   const [mode, setMode] = useState<'split' | 'full'>('split')
   const [isSaving, setIsSaving] = useState(false)
 
-  // Form fields
+  // Form fields — top
+  const [topType, setTopType] = useState('')
+  const [topDetail, setTopDetail] = useState('')
+  const [topTags, setTopTags] = useState<string[]>([])
   const [topColor, setTopColor] = useState('')
+
+  // Form fields — bottom
+  const [bottomType, setBottomType] = useState('')
+  const [bottomDetail, setBottomDetail] = useState('')
+  const [bottomTags, setBottomTags] = useState<string[]>([])
   const [bottomColor, setBottomColor] = useState('')
-  const [topTags, setTopTags] = useState('')
-  const [bottomTags, setBottomTags] = useState('')
+
+  // Form fields — full suit
+  const [fullType, setFullType] = useState('')
+  const [fullDetail, setFullDetail] = useState('')
+  const [fullTags, setFullTags] = useState<string[]>([])
+  const [fullColor, setFullColor] = useState('')
   const [outfitName, setOutfitName] = useState('')
 
-  const fileInputRef = useRef<HTMLInputElement>(null)
+  const cameraInputRef = useRef<HTMLInputElement>(null)
+  const galleryInputRef = useRef<HTMLInputElement>(null)
   const imageContainerRef = useRef<HTMLDivElement>(null)
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
@@ -43,35 +159,30 @@ export default function SaveOutfitView() {
       setStep('cut')
     }
     reader.readAsDataURL(file)
+    e.target.value = ''
   }, [])
 
   const handleCutConfirm = useCallback(async () => {
     if (!imageSrc) return
-
     const img = new Image()
     img.onload = async () => {
       const cutY = Math.round((cutPosition / 100) * img.height)
-
-      // Create top portion
       const topCanvas = document.createElement('canvas')
       topCanvas.width = img.width
       topCanvas.height = cutY
       const topCtx = topCanvas.getContext('2d')!
       topCtx.drawImage(img, 0, 0, img.width, cutY, 0, 0, img.width, cutY)
 
-      // Create bottom portion
       const bottomCanvas = document.createElement('canvas')
       bottomCanvas.width = img.width
       bottomCanvas.height = img.height - cutY
       const bottomCtx = bottomCanvas.getContext('2d')!
       bottomCtx.drawImage(img, 0, cutY, img.width, img.height - cutY, 0, 0, img.width, img.height - cutY)
 
-      // Optimize both halves before saving
       const [optimizedTop, optimizedBottom] = await Promise.all([
         optimizeDataURL(topCanvas.toDataURL('image/png')),
         optimizeDataURL(bottomCanvas.toDataURL('image/png')),
       ])
-
       setTopImageSrc(optimizedTop)
       setBottomImageSrc(optimizedBottom)
       setStep('save')
@@ -97,22 +208,26 @@ export default function SaveOutfitView() {
     setBottomImageSrc(null)
     setCutPosition(50)
     setMode('split')
+    setTopType(''); setTopDetail(''); setTopTags([]); setTopColor('')
+    setBottomType(''); setBottomDetail(''); setBottomTags([]); setBottomColor('')
+    setFullType(''); setFullDetail(''); setFullTags([]); setFullColor('')
+    setOutfitName('')
   }
 
   const handleSaveFull = async () => {
     if (!imageSrc) return
     setIsSaving(true)
     try {
-      // Optimize the full image
       const optimizedSrc = await optimizeDataURL(imageSrc)
       const file = dataURLToFile(optimizedSrc, 'outfit.jpg')
+      const allTags = [fullDetail, ...fullTags].filter(Boolean)
 
       const success = await addClothingItem({
         category: 'FULL_SUIT',
-        subType: outfitName || 'Full Outfit',
-        color: topColor || '#000000',
+        subType: fullType || 'Full Outfit',
+        color: fullColor,
         size: '',
-        tags: topTags ? topTags.split(',').map(t => t.trim()) : [],
+        tags: allTags,
         isFavorite: false,
         imageUrl: '',
       }, file)
@@ -133,28 +248,28 @@ export default function SaveOutfitView() {
     if (!topImageSrc || !bottomImageSrc) return
     setIsSaving(true)
     try {
-      // Save top (already optimized from handleCutConfirm)
       const topFile = dataURLToFile(topImageSrc, 'top.jpg')
+      const topAllTags = [topDetail, ...topTags].filter(Boolean)
 
       const topSuccess = await addClothingItem({
         category: 'TOP',
-        subType: outfitName ? `${outfitName} Top` : 'Top',
-        color: topColor || '#000000',
+        subType: topType || 'Top',
+        color: topColor,
         size: '',
-        tags: topTags ? topTags.split(',').map(t => t.trim()) : [],
+        tags: topAllTags,
         isFavorite: false,
         imageUrl: '',
       }, topFile)
 
-      // Save bottom (already optimized from handleCutConfirm)
       const bottomFile = dataURLToFile(bottomImageSrc, 'bottom.jpg')
+      const bottomAllTags = [bottomDetail, ...bottomTags].filter(Boolean)
 
       const bottomSuccess = await addClothingItem({
         category: 'BOTTOM',
-        subType: outfitName ? `${outfitName} Bottom` : 'Bottom',
-        color: bottomColor || '#000000',
+        subType: bottomType || 'Bottom',
+        color: bottomColor,
         size: '',
-        tags: bottomTags ? bottomTags.split(',').map(t => t.trim()) : [],
+        tags: bottomAllTags,
         isFavorite: false,
         imageUrl: '',
       }, bottomFile)
@@ -171,6 +286,143 @@ export default function SaveOutfitView() {
     setIsSaving(false)
   }
 
+  // Helper: render cascading tag selector
+  const renderCascadingTags = (
+    typeTree: Record<string, Record<string, string[]>>,
+    selectedType: string,
+    setSelectedType: (v: string) => void,
+    selectedDetail: string,
+    setSelectedDetail: (v: string) => void,
+    selectedTags: string[],
+    toggleTag: (tag: string) => void,
+    accentColor: string = 'rose'
+  ) => {
+    const types = Object.keys(typeTree)
+    const details = selectedType ? Object.keys(typeTree[selectedType] || {}) : []
+    const tags = selectedType && selectedDetail ? (typeTree[selectedType][selectedDetail] || []) : []
+    const bgActive = accentColor === 'sky' ? 'bg-sky-500' : 'bg-rose-500'
+    const bgInactive = accentColor === 'sky' ? 'bg-sky-50 text-sky-700 hover:bg-sky-100' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+
+    return (
+      <div className="space-y-3">
+        {/* Row 1: Type */}
+        <div>
+          <p className="text-xs font-semibold mb-1.5">Type</p>
+          <div className="flex flex-wrap gap-2">
+            {types.map((type) => (
+              <button
+                key={type}
+                onClick={() => { setSelectedType(type); setSelectedDetail(''); /* clear tags */ }}
+                className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                  selectedType === type ? `${bgActive} text-white shadow-sm` : bgInactive
+                }`}
+              >
+                {type}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Row 2: Detail */}
+        {selectedType && details.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold mb-1.5">{selectedType} Style</p>
+            <div className="flex flex-wrap gap-2">
+              {details.map((detail) => (
+                <button
+                  key={detail}
+                  onClick={() => setSelectedDetail(detail)}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    selectedDetail === detail ? `${bgActive} text-white shadow-sm` : bgInactive
+                  }`}
+                >
+                  {detail}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Row 3: Specific tags */}
+        {selectedDetail && tags.length > 0 && (
+          <div>
+            <p className="text-xs font-semibold mb-1.5">Details <span className="text-muted-foreground font-normal">(tap to select)</span></p>
+            <div className="flex flex-wrap gap-2">
+              {tags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => toggleTag(tag)}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    selectedTags.includes(tag) ? `${bgActive} text-white shadow-sm` : bgInactive
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Season / Occasion */}
+        {selectedType && (
+          <div>
+            <p className="text-xs font-semibold mb-1.5">Season & Occasion</p>
+            <div className="flex flex-wrap gap-2">
+              {seasonOccasionTags.map((tag) => (
+                <button
+                  key={tag}
+                  onClick={() => toggleTag(tag)}
+                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+                    selectedTags.includes(tag) ? `${bgActive} text-white shadow-sm` : bgInactive
+                  }`}
+                >
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  // Helper: render color picker
+  const renderColorPicker = (
+    selectedColor: string,
+    setSelectedColor: (v: string) => void
+  ) => (
+    <div>
+      <p className="text-xs font-semibold mb-2">Color</p>
+      <div className="flex flex-wrap gap-2.5">
+        {colorPalette.map(({ key, label, hex }) => (
+          <button
+            key={key}
+            onClick={() => setSelectedColor(selectedColor === key ? '' : key)}
+            className={`w-9 h-9 rounded-full border-2 transition-all relative ${
+              selectedColor === key
+                ? 'border-rose-500 scale-125 ring-2 ring-rose-200'
+                : 'border-gray-200 hover:border-rose-300 hover:scale-110'
+            }`}
+            style={key === 'multi'
+              ? { background: 'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f)' }
+              : { backgroundColor: hex }
+            }
+            title={label}
+          >
+            {selectedColor === key && (
+              <Check className={`w-4 h-4 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${
+                ['white', 'cream', 'yellow', 'beige', 'lavender', 'silver'].includes(key) ? 'text-gray-700' : 'text-white'
+              }`} />
+            )}
+          </button>
+        ))}
+      </div>
+      {selectedColor && (
+        <p className="text-xs text-muted-foreground mt-1">Selected: {colorPalette.find(c => c.key === selectedColor)?.label}</p>
+      )}
+    </div>
+  )
+
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
@@ -184,7 +436,6 @@ export default function SaveOutfitView() {
             {step === 'capture' ? 'Take or upload a photo' : step === 'cut' ? 'Drag the cut line' : 'Add details & save'}
           </p>
         </div>
-        {/* Step indicators */}
         <div className="flex gap-1.5">
           <div className={`w-6 h-1.5 rounded-full ${step === 'capture' ? 'bg-rose-500' : 'bg-rose-200'}`} />
           <div className={`w-6 h-1.5 rounded-full ${step === 'cut' ? 'bg-rose-500' : 'bg-rose-200'}`} />
@@ -208,21 +459,29 @@ export default function SaveOutfitView() {
               </div>
               <h2 className="text-lg font-semibold text-rose-900 mb-2">Snap Your Outfit</h2>
               <p className="text-sm text-muted-foreground text-center mb-8 max-w-xs">
-                Take a full-body photo or upload from gallery. You can split it into top & bottom later.
+                Take a full-body photo or upload from gallery. You can split it into top &amp; bottom later.
               </p>
 
+              {/* Separate inputs for camera vs gallery */}
               <input
-                ref={fileInputRef}
+                ref={cameraInputRef}
                 type="file"
                 accept="image/*"
                 capture="environment"
                 className="hidden"
                 onChange={handleFileSelect}
               />
+              <input
+                ref={galleryInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={handleFileSelect}
+              />
 
               <div className="flex flex-col gap-3 w-full max-w-xs">
                 <Button
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => cameraInputRef.current?.click()}
                   className="h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
                 >
                   <Camera className="w-5 h-5 mr-2" />
@@ -230,10 +489,10 @@ export default function SaveOutfitView() {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={() => galleryInputRef.current?.click()}
                   className="h-12 rounded-xl border-rose-200 text-rose-700 font-semibold"
                 >
-                  <Upload className="w-5 h-5 mr-2" />
+                  <ImagePlus className="w-5 h-5 mr-2" />
                   Upload from Gallery
                 </Button>
               </div>
@@ -253,20 +512,16 @@ export default function SaveOutfitView() {
                 <button
                   onClick={() => setMode('split')}
                   className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                    mode === 'split'
-                      ? 'bg-rose-500 text-white shadow-sm'
-                      : 'bg-rose-50 text-rose-700'
+                    mode === 'split' ? 'bg-rose-500 text-white shadow-sm' : 'bg-rose-50 text-rose-700'
                   }`}
                 >
                   <Scissors className="inline w-4 h-4 mr-1" />
-                  Split Top & Bottom
+                  Split Top &amp; Bottom
                 </button>
                 <button
                   onClick={() => setMode('full')}
                   className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
-                    mode === 'full'
-                      ? 'bg-rose-500 text-white shadow-sm'
-                      : 'bg-rose-50 text-rose-700'
+                    mode === 'full' ? 'bg-rose-500 text-white shadow-sm' : 'bg-rose-50 text-rose-700'
                   }`}
                 >
                   <Shirt className="inline w-4 h-4 mr-1" />
@@ -284,35 +539,13 @@ export default function SaveOutfitView() {
                 onTouchMove={(e) => handleDragMove(e.touches[0].clientY)}
                 onTouchEnd={handleDragEnd}
               >
-                <img
-                  src={imageSrc}
-                  alt="Your outfit"
-                  className="w-full h-full object-cover"
-                  draggable={false}
-                />
-
-                {/* Cut line */}
+                <img src={imageSrc} alt="Your outfit" className="w-full h-full object-cover" draggable={false} />
                 {mode === 'split' && (
                   <>
-                    {/* Dimming overlays */}
-                    <div
-                      className="absolute top-0 left-0 right-0 bg-rose-500/10 pointer-events-none transition-all"
-                      style={{ height: `${cutPosition}%` }}
-                    />
-                    <div
-                      className="absolute bottom-0 left-0 right-0 bg-sky-500/10 pointer-events-none transition-all"
-                      style={{ height: `${100 - cutPosition}%` }}
-                    />
-
-                    {/* Labels */}
-                    <div className="absolute top-3 left-3 px-2 py-1 bg-rose-500 text-white text-[10px] font-bold rounded-lg">
-                      👕 TOP
-                    </div>
-                    <div className="absolute bottom-3 left-3 px-2 py-1 bg-sky-500 text-white text-[10px] font-bold rounded-lg">
-                      👖 BOTTOM
-                    </div>
-
-                    {/* The draggable cut line */}
+                    <div className="absolute top-0 left-0 right-0 bg-rose-500/10 pointer-events-none transition-all" style={{ height: `${cutPosition}%` }} />
+                    <div className="absolute bottom-0 left-0 right-0 bg-sky-500/10 pointer-events-none transition-all" style={{ height: `${100 - cutPosition}%` }} />
+                    <div className="absolute top-3 left-3 px-2 py-1 bg-rose-500 text-white text-[10px] font-bold rounded-lg">👕 TOP</div>
+                    <div className="absolute bottom-3 left-3 px-2 py-1 bg-sky-500 text-white text-[10px] font-bold rounded-lg">👖 BOTTOM</div>
                     <div
                       className="absolute left-0 right-0 flex items-center justify-center cursor-row-resize z-10"
                       style={{ top: `${cutPosition}%`, transform: 'translateY(-50%)' }}
@@ -327,11 +560,8 @@ export default function SaveOutfitView() {
                   </>
                 )}
               </div>
-
               {mode === 'split' && (
-                <p className="text-xs text-center text-muted-foreground mt-3">
-                  ↔ Drag the scissors line up or down to set the split point
-                </p>
+                <p className="text-xs text-center text-muted-foreground mt-3">↔ Drag the scissors line up or down to set the split point</p>
               )}
             </motion.div>
           )}
@@ -349,85 +579,52 @@ export default function SaveOutfitView() {
                 {mode === 'split' ? (
                   <>
                     <div className="flex-1 rounded-xl overflow-hidden border border-rose-200 aspect-[3/4]">
-                      {topImageSrc && (
-                        <img src={topImageSrc} alt="Top" className="w-full h-full object-cover" />
-                      )}
+                      {topImageSrc && <img src={topImageSrc} alt="Top" className="w-full h-full object-cover" />}
                     </div>
                     <div className="flex-1 rounded-xl overflow-hidden border border-sky-200 aspect-[3/4]">
-                      {bottomImageSrc && (
-                        <img src={bottomImageSrc} alt="Bottom" className="w-full h-full object-cover" />
-                      )}
+                      {bottomImageSrc && <img src={bottomImageSrc} alt="Bottom" className="w-full h-full object-cover" />}
                     </div>
                   </>
                 ) : (
                   <div className="flex-1 rounded-xl overflow-hidden border border-rose-200 aspect-[3/4] max-w-[200px] mx-auto">
-                    {imageSrc && (
-                      <img src={imageSrc} alt="Full outfit" className="w-full h-full object-cover" />
-                    )}
+                    {imageSrc && <img src={imageSrc} alt="Full outfit" className="w-full h-full object-cover" />}
                   </div>
                 )}
               </div>
 
               {/* Outfit name */}
               <div>
-                <label className="text-xs font-medium text-rose-700 mb-1 block">Outfit Name</label>
-                <Input
-                  placeholder="e.g., Office Monday, Party Night"
+                <p className="text-xs font-medium text-rose-700 mb-1">Outfit Name</p>
+                <input
+                  type="text"
+                  placeholder="e.g., Office Monday"
                   value={outfitName}
                   onChange={(e) => setOutfitName(e.target.value)}
-                  className="h-11 rounded-xl border-rose-200 focus:border-rose-400"
+                  className="w-full h-11 px-3 rounded-xl border border-rose-200 text-sm focus:border-rose-400 focus:outline-none"
                 />
               </div>
 
               {mode === 'split' ? (
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Top details */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-rose-700">👕 Top</p>
-                    <Input
-                      placeholder="Color (e.g., blue)"
-                      value={topColor}
-                      onChange={(e) => setTopColor(e.target.value)}
-                      className="h-10 rounded-xl border-rose-200 text-xs focus:border-rose-400"
-                    />
-                    <Input
-                      placeholder="Tags (formal, silk...)"
-                      value={topTags}
-                      onChange={(e) => setTopTags(e.target.value)}
-                      className="h-10 rounded-xl border-rose-200 text-xs focus:border-rose-400"
-                    />
+                <div className="space-y-4">
+                  {/* ─── TOP section ─── */}
+                  <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50 space-y-3">
+                    <p className="text-sm font-semibold text-rose-700">👕 Top</p>
+                    {renderCascadingTags(topTypes, topType, setTopType, topDetail, setTopDetail, topTags, (tag) => setTopTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'rose')}
+                    {renderColorPicker(topColor, setTopColor)}
                   </div>
-                  {/* Bottom details */}
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-sky-700">👖 Bottom</p>
-                    <Input
-                      placeholder="Color (e.g., black)"
-                      value={bottomColor}
-                      onChange={(e) => setBottomColor(e.target.value)}
-                      className="h-10 rounded-xl border-sky-200 text-xs focus:border-sky-400"
-                    />
-                    <Input
-                      placeholder="Tags (casual, denim...)"
-                      value={bottomTags}
-                      onChange={(e) => setBottomTags(e.target.value)}
-                      className="h-10 rounded-xl border-sky-200 text-xs focus:border-sky-400"
-                    />
+
+                  {/* ─── BOTTOM section ─── */}
+                  <div className="p-3 rounded-xl border border-sky-200 bg-sky-50/50 space-y-3">
+                    <p className="text-sm font-semibold text-sky-700">👖 Bottom</p>
+                    {renderCascadingTags(bottomTypes, bottomType, setBottomType, bottomDetail, setBottomDetail, bottomTags, (tag) => setBottomTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'sky')}
+                    {renderColorPicker(bottomColor, setBottomColor)}
                   </div>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <Input
-                    placeholder="Color (e.g., blue)"
-                    value={topColor}
-                    onChange={(e) => setTopColor(e.target.value)}
-                    className="h-10 rounded-xl border-rose-200 text-xs focus:border-rose-400"
-                  />
-                  <Input
-                    placeholder="Tags (formal, saree, silk...)"
-                    value={topTags}
-                    onChange={(e) => setTopTags(e.target.value)}
-                    className="h-10 rounded-xl border-rose-200 text-xs focus:border-rose-400"
-                  />
+                <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50 space-y-3">
+                  <p className="text-sm font-semibold text-rose-700">👗 Full Suit</p>
+                  {renderCascadingTags(fullSuitTypes, fullType, setFullType, fullDetail, setFullDetail, fullTags, (tag) => setFullTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'rose')}
+                  {renderColorPicker(fullColor, setFullColor)}
                 </div>
               )}
             </motion.div>
