@@ -158,3 +158,28 @@ Stage Summary:
 - Cascading tag system: Type → Style → Details → Season/Occasion
 - Touch-friendly buttons (px-4 py-2.5 rounded-xl)
 - No AI integration - all manual selection, fast and responsive
+---
+Task ID: 7
+Agent: Main Agent
+Task: Add Crop tool, Cut button, and Marquee selection tool to SaveOutfitView
+
+Work Log:
+- Added `cropImageRegion()` utility function to `src/lib/image-utils.ts` for cropping rectangular regions from data URL images
+- Completely redesigned `SaveOutfitView.tsx` with 3-step flow: Capture → Edit → Save
+- Implemented **Crop tool**: Draw rectangle on image, box-shadow dimming outside selection, corner handles, confirm to crop person from group photo
+- Implemented **Cut tool** (existing, kept): Horizontal scissors line drag to split into top/bottom
+- Implemented **Marquee tool**: Draw multiple rectangles on image, each with numbered badge and color-coded border, tap each to assign tags (category, type, detail, color, season), save all sections as separate clothing items
+- Added cascading tag trees for all 5 categories (TOP, BOTTOM, FULL_SUIT, SHOES, ACCESSORY) with `getTypeTreeForCategory()` helper
+- Fixed crop overlay double-dimming issue (removed duplicate overlay, kept box-shadow technique)
+- Tool selector UI with 3 tabs: Crop | Cut | Marquee
+- Marquee tag panel with category picker, cascading tags, color picker, done button
+- Section summary list showing all drawn sections with tap-to-tag and delete functionality
+- Lint passes clean, dev server running, browser tested successfully
+
+Stage Summary:
+- SaveOutfitView now has 3 editing tools: Crop, Cut, Marquee
+- Crop: Draw rectangle → Crop Image button → replaces image with cropped version → then use Cut or Marquee
+- Cut: Horizontal split line → Confirm Cut → split into top/bottom → assign tags → save
+- Marquee: Draw multiple rectangles → tap each to assign category/tags/color → Save All saves each as separate clothing item
+- All 3 tools tested and working
+- No AI integration - purely manual selection, fast and responsive

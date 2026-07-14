@@ -1,0 +1,1339 @@
+     1→'use client'
+     2→
+     3→import { useState, useRef, useCallback } from 'react'
+     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→import {
+     6→  ArrowLeft, Camera, ImagePlus, Scissors, Check, RotateCcw, Shirt,
+     7→  Crop, MousePointer2, Trash2, Plus, X, Tag
+     8→} from 'lucide-react'
+     9→import { Button } from '@/components/ui/button'
+    10→import { useStore, type ClothingCategory } from '@/lib/store'
+    11→import { optimizeDataURL, dataURLToFile, cropImageRegion } from '@/lib/image-utils'
+    12→import { toast } from 'sonner'
+    13→
+    14→// ─── Step type ───
+    15→type SaveStep = 'capture' | 'edit' | 'save'
+    16→type EditTool = 'crop' | 'cut' | 'marquee'
+    17→
+    18→// ─── Rect type for crop/marquee ───
+    19→interface DrawRect {
+    20→  id: string
+    21→  x: number  // percentage 0-100
+    22→  y: number  // percentage 0-100
+    23→  w: number  // percentage 0-100
+    24→  h: number  // percentage 0-100
+    25→}
+    26→
+    27→// ─── Marquee section with tags ───
+    28→interface MarqueeSection extends DrawRect {
+    29→  category: ClothingCategory | null
+    30→  type: string
+    31→  detail: string
+    32→  tags: string[]
+    33→  color: string
+    34→}
+    35→
+    36→// ─── Cascading type trees ───
+    37→const topTypes: Record<string, Record<string, string[]>> = {
+    38→  'T-Shirt': {
+    39→    'Short Sleeves': ['Round Neck', 'V Neck', 'Graphic', 'Plain'],
+    40→    'Long Sleeves': ['Round Neck', 'V Neck', 'Turtle Neck'],
+    41→    'Sleeveless': ['Tank Top', 'Muscle Tee'],
+    42→  },
+    43→  'Shirt': {
+    44→    'Short Sleeves': ['Casual', 'Formal', 'Linen'],
+    45→    'Long Sleeves': ['Casual', 'Formal', 'Denim', 'Flannel'],
+    46→  },
+    47→  'Blouse': {
+    48→    'Short Sleeves': ['Round Neck', 'V Neck', 'Ruffle'],
+    49→    'Long Sleeves': ['Button-up', 'Wrap', 'Pleated'],
+    50→    'Sleeveless': ['Camisole', 'Tank', 'Halter'],
+    51→  },
+    52→  'Jacket': {
+    53→    'Casual': ['Denim', 'Bomber', 'Varsity'],
+    54→    'Formal': ['Blazer', 'Sport Coat'],
+    55→    'Winter': ['Puffer', 'Parka', 'Leather'],
+    56→  },
+    57→  'Sweater': {
+    58→    'Pullover': ['Crew Neck', 'V Neck', 'Turtle Neck'],
+    59→    'Cardigan': ['Button-up', 'Open Front'],
+    60→  },
+    61→  'Hoodie': {
+    62→    'Pullover': ['Kangaroo Pocket', 'Cropped'],
+    63→    'Zip-up': ['Full Zip', 'Half Zip'],
+    64→  },
+    65→  'Coat': {
+    66→    'Overcoat': ['Wool', 'Cashmere', 'Trench'],
+    67→    'Raincoat': ['Hooded', 'Classic'],
+    68→  },
+    69→  'Tank Top': {
+    70→    'Casual': ['Ribbed', 'Cropped'],
+    71→    'Athletic': ['Compression', 'Mesh'],
+    72→  },
+    73→}
+    74→
+    75→const bottomTypes: Record<string, Record<string, string[]>> = {
+    76→  'Jeans': {
+    77→    'Slim Fit': ['Dark Wash', 'Light Wash', 'Black'],
+    78→    'Regular Fit': ['Straight Leg', 'Bootcut'],
+    79→    'Skinny': ['High Rise', 'Mid Rise'],
+    80→  },
+    81→  'Trousers': {
+    82→    'Formal': ['Pleated', 'Flat Front'],
+    83→    'Casual': ['Chinos', 'Cargos', 'Corduroy'],
+    84→  },
+    85→  'Shorts': {
+    86→    'Casual': ['Denim', 'Chino', 'Athletic'],
+    87→    'Formal': ['Bermuda', 'Tailored'],
+    88→  },
+    89→  'Skirt': {
+    90→    'Mini': ['A-Line', 'Pleated', 'Wrap'],
+    91→    'Midi': ['A-Line', 'Pencil', 'Wrap'],
+    92→    'Maxi': ['Flowy', 'Slit', 'Tiered'],
+    93→  },
+    94→  'Leggings': {
+    95→    'Casual': ['Cotton', 'High Waist'],
+    96→    'Athletic': ['Compression', 'Yoga'],
+    97→  },
+    98→  'Joggers': {
+    99→    'Casual': ['Cotton', 'Fleece', 'Cuffed'],
+   100→    'Athletic': ['Slim Fit', 'Tapered'],
+   101→  },
+   102→}
+   103→
+   104→const fullSuitTypes: Record<string, Record<string, string[]>> = {
+   105→  'Saree': {
+   106→    'Silk': ['Banarasi', 'Kanchipuram'],
+   107→    'Cotton': ['Handloom', 'Printed'],
+   108→    'Synthetic': ['Georgette', 'Chiffon', 'Crepe'],
+   109→  },
+   110→  'Dress': {
+   111→    'Casual': ['T-Shirt', 'Wrap', 'Shift'],
+   112→    'Formal': ['Cocktail', 'Evening Gown', 'Sheath'],
+   113→    'Summer': ['Sundress', 'Maxi', 'Floral'],
+   114→  },
+   115→  'Jumpsuit': {
+   116→    'Casual': ['Wide Leg', 'Slim Fit'],
+   117→    'Formal': ['Black Tie', 'Structured'],
+   118→  },
+   119→  'Salwar Kameez': {
+   120→    'Traditional': ['Anarkali', 'Straight Cut', 'A-Line'],
+   121→    'Modern': ['Palazzo', 'Dhoti', 'Cape Style'],
+   122→  },
+   123→}
+   124→
+   125→const shoesTypes: Record<string, Record<string, string[]>> = {
+   126→  'Sneakers': {
+   127→    'Casual': ['Canvas', 'Leather', 'Platform'],
+   128→    'Sport': ['Running', 'Training', 'Walking'],
+   129→  },
+   130→  'Heels': {
+   131→    'Low': ['Kitten', 'Block', 'Wedge'],
+   132→    'High': ['Stiletto', 'Platform'],
+   133→  },
+   134→  'Flats': {
+   135→    'Casual': ['Ballet', 'Loafer', 'Espadrille'],
+   136→    'Formal': ['Pointed', 'Round Toe'],
+   137→  },
+   138→  'Boots': {
+   139→    'Ankle': ['Chelsea', 'Combat', 'Chukka'],
+   140→    'Knee-High': ['Riding', 'Lace-up'],
+   141→  },
+   142→  'Sandals': {
+   143→    'Casual': ['Flip Flop', 'Slider', 'Strappy'],
+   144→    'Formal': ['Block Heel', 'Wedge'],
+   145→  },
+   146→}
+   147→
+   148→const accessoryTypes: Record<string, Record<string, string[]>> = {
+   149→  'Watch': {
+   150→    'Casual': ['Leather Strap', 'Metal Band', 'Digital'],
+   151→    'Formal': ['Gold', 'Silver', 'Rose Gold'],
+   152→  },
+   153→  'Necklace': {
+   154→    'Casual': ['Pendant', 'Chain', 'Choker'],
+   155→    'Formal': ['Pearl', 'Diamond', 'Statement'],
+   156→  },
+   157→  'Earrings': {
+   158→    'Casual': ['Studs', 'Hoops', 'Drop'],
+   159→    'Formal': ['Chandelier', 'Pearl'],
+   160→  },
+   161→  'Belt': {
+   162→    'Casual': ['Canvas', 'Braided'],
+   163→    'Formal': ['Leather', 'Reversible'],
+   164→  },
+   165→  'Bag': {
+   166→    'Casual': ['Tote', 'Backpack', 'Crossbody'],
+   167→    'Formal': ['Clutch', 'Satchel', 'Briefcase'],
+   168→  },
+   169→  'Sunglasses': {
+   170→    'Casual': ['Aviator', 'Wayfarer', 'Round'],
+   171→    'Sport': ['Wraparound', 'Polarized'],
+   172→  },
+   173→  'Hat': {
+   174→    'Casual': ['Baseball Cap', 'Beanie', 'Bucket'],
+   175→    'Formal': ['Fedora', 'Wide Brim'],
+   176→  },
+   177→  'Scarf': {
+   178→    'Casual': ['Cotton', 'Silk', 'Wool'],
+   179→    'Winter': ['Knit', 'Cashmere', 'Fleece'],
+   180→  },
+   181→}
+   182→
+   183→// ─── Category options ───
+   184→const categoryOptions: { key: ClothingCategory; label: string; icon: string }[] = [
+   185→  { key: 'TOP', label: 'Top', icon: '👕' },
+   186→  { key: 'BOTTOM', label: 'Bottom', icon: '👖' },
+   187→  { key: 'FULL_SUIT', label: 'Full Suit', icon: '👗' },
+   188→  { key: 'SHOES', label: 'Shoes', icon: '👟' },
+   189→  { key: 'ACCESSORY', label: 'Accessory', icon: '💍' },
+   190→]
+   191→
+   192→function getTypeTreeForCategory(cat: ClothingCategory): Record<string, Record<string, string[]>> {
+   193→  switch (cat) {
+   194→    case 'TOP': return topTypes
+   195→    case 'BOTTOM': return bottomTypes
+   196→    case 'FULL_SUIT': return fullSuitTypes
+   197→    case 'SHOES': return shoesTypes
+   198→    case 'ACCESSORY': return accessoryTypes
+   199→    default: return {}
+   200→  }
+   201→}
+   202→
+   203→// ─── Color palette ───
+   204→const colorPalette = [
+   205→  { key: 'black', label: 'Black', hex: '#1a1a1a' },
+   206→  { key: 'white', label: 'White', hex: '#FFFFFF' },
+   207→  { key: 'red', label: 'Red', hex: '#DC2626' },
+   208→  { key: 'maroon', label: 'Maroon', hex: '#800000' },
+   209→  { key: 'pink', label: 'Pink', hex: '#EC4899' },
+   210→  { key: 'rose', label: 'Rose', hex: '#F43F5E' },
+   211→  { key: 'orange', label: 'Orange', hex: '#F97316' },
+   212→  { key: 'peach', label: 'Peach', hex: '#FBBF8C' },
+   213→  { key: 'yellow', label: 'Yellow', hex: '#EAB308' },
+   214→  { key: 'beige', label: 'Beige', hex: '#D4A574' },
+   215→  { key: 'cream', label: 'Cream', hex: '#FFFDD0' },
+   216→  { key: 'green', label: 'Green', hex: '#22C55E' },
+   217→  { key: 'olive', label: 'Olive', hex: '#808000' },
+   218→  { key: 'teal', label: 'Teal', hex: '#14B8A6' },
+   219→  { key: 'blue', label: 'Blue', hex: '#3B82F6' },
+   220→  { key: 'navy', label: 'Navy', hex: '#1E3A5F' },
+   221→  { key: 'purple', label: 'Purple', hex: '#8B5CF6' },
+   222→  { key: 'lavender', label: 'Lavender', hex: '#A78BFA' },
+   223→  { key: 'brown', label: 'Brown', hex: '#92400E' },
+   224→  { key: 'grey', label: 'Grey', hex: '#6B7280' },
+   225→  { key: 'silver', label: 'Silver', hex: '#C0C0C0' },
+   226→  { key: 'gold', label: 'Gold', hex: '#DAA520' },
+   227→  { key: 'multi', label: 'Multi', hex: 'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f)' },
+   228→]
+   229→
+   230→const seasonOccasionTags = ['Casual', 'Formal', 'Semi-Formal', 'Summer', 'Winter', 'All Season']
+   231→
+   232→// ─── Section colors for marquee ───
+   233→const sectionColors = [
+   234→  'border-rose-400 bg-rose-400/20',
+   235→  'border-sky-400 bg-sky-400/20',
+   236→  'border-emerald-400 bg-emerald-400/20',
+   237→  'border-amber-400 bg-amber-400/20',
+   238→  'border-purple-400 bg-purple-400/20',
+   239→  'border-pink-400 bg-pink-400/20',
+   240→  'border-teal-400 bg-teal-400/20',
+   241→  'border-orange-400 bg-orange-400/20',
+   242→]
+   243→
+   244→const sectionBadgeColors = [
+   245→  'bg-rose-500',
+   246→  'bg-sky-500',
+   247→  'bg-emerald-500',
+   248→  'bg-amber-500',
+   249→  'bg-purple-500',
+   250→  'bg-pink-500',
+   251→  'bg-teal-500',
+   252→  'bg-orange-500',
+   253→]
+   254→
+   255→export default function SaveOutfitView() {
+   256→  const { setView, addClothingItem } = useStore()
+   257→  const [step, setStep] = useState<SaveStep>('capture')
+   258→  const [imageSrc, setImageSrc] = useState<string | null>(null)
+   259→  const [originalImageSrc, setOriginalImageSrc] = useState<string | null>(null)
+   260→
+   261→  // Edit tool state
+   262→  const [tool, setTool] = useState<EditTool>('cut')
+   263→  const [cutPosition, setCutPosition] = useState(50)
+   264→  const [isDraggingCut, setIsDraggingCut] = useState(false)
+   265→
+   266→  // Crop state
+   267→  const [isDrawingCrop, setIsDrawingCrop] = useState(false)
+   268→  const [cropRect, setCropRect] = useState<DrawRect | null>(null)
+   269→  const [cropDrawStart, setCropDrawStart] = useState<{ x: number; y: number } | null>(null)
+   270→
+   271→  // Marquee state
+   272→  const [marqueeSections, setMarqueeSections] = useState<MarqueeSection[]>([])
+   273→  const [isDrawingMarquee, setIsDrawingMarquee] = useState(false)
+   274→  const [marqueeDrawStart, setMarqueeDrawStart] = useState<{ x: number; y: number } | null>(null)
+   275→  const [currentMarqueeRect, setCurrentMarqueeRect] = useState<DrawRect | null>(null)
+   276→  const [selectedSectionId, setSelectedSectionId] = useState<string | null>(null)
+   277→  const [showTagPanel, setShowTagPanel] = useState(false)
+   278→
+   279→  // Save state
+   280→  const [mode, setMode] = useState<'split' | 'full'>('split')
+   281→  const [isSaving, setIsSaving] = useState(false)
+   282→
+   283→  // Form fields — top
+   284→  const [topType, setTopType] = useState('')
+   285→  const [topDetail, setTopDetail] = useState('')
+   286→  const [topTags, setTopTags] = useState<string[]>([])
+   287→  const [topColor, setTopColor] = useState('')
+   288→  const [topImageSrc, setTopImageSrc] = useState<string | null>(null)
+   289→  const [bottomImageSrc, setBottomImageSrc] = useState<string | null>(null)
+   290→
+   291→  // Form fields — bottom
+   292→  const [bottomType, setBottomType] = useState('')
+   293→  const [bottomDetail, setBottomDetail] = useState('')
+   294→  const [bottomTags, setBottomTags] = useState<string[]>([])
+   295→  const [bottomColor, setBottomColor] = useState('')
+   296→
+   297→  // Form fields — full suit
+   298→  const [fullType, setFullType] = useState('')
+   299→  const [fullDetail, setFullDetail] = useState('')
+   300→  const [fullTags, setFullTags] = useState<string[]>([])
+   301→  const [fullColor, setFullColor] = useState('')
+   302→  const [outfitName, setOutfitName] = useState('')
+   303→
+   304→  const cameraInputRef = useRef<HTMLInputElement>(null)
+   305→  const galleryInputRef = useRef<HTMLInputElement>(null)
+   306→  const imageContainerRef = useRef<HTMLDivElement>(null)
+   307→
+   308→  // ─── File select ───
+   309→  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+   310→    const file = e.target.files?.[0]
+   311→    if (!file) return
+   312→    const reader = new FileReader()
+   313→    reader.onload = (ev) => {
+   314→      const dataUrl = ev.target?.result as string
+   315→      setImageSrc(dataUrl)
+   316→      setOriginalImageSrc(dataUrl)
+   317→      setStep('edit')
+   318→    }
+   319→    reader.readAsDataURL(file)
+   320→    e.target.value = ''
+   321→  }, [])
+   322→
+   323→  // ─── Cut drag handlers ───
+   324→  const handleCutDragMove = useCallback((clientY: number) => {
+   325→    if (!imageContainerRef.current || !isDraggingCut) return
+   326→    const rect = imageContainerRef.current.getBoundingClientRect()
+   327→    const y = clientY - rect.top
+   328→    const pct = Math.max(10, Math.min(90, (y / rect.height) * 100))
+   329→    setCutPosition(pct)
+   330→  }, [isDraggingCut])
+   331→
+   332→  const handleCutDragStart = useCallback(() => setIsDraggingCut(true), [])
+   333→  const handleCutDragEnd = useCallback(() => setIsDraggingCut(false), [])
+   334→
+   335→  // ─── Crop drawing handlers ───
+   336→  const handleCropPointerDown = useCallback((e: React.PointerEvent) => {
+   337→    if (tool !== 'crop') return
+   338→    e.preventDefault()
+   339→    const container = imageContainerRef.current
+   340→    if (!container) return
+   341→    const rect = container.getBoundingClientRect()
+   342→    const x = ((e.clientX - rect.left) / rect.width) * 100
+   343→    const y = ((e.clientY - rect.top) / rect.height) * 100
+   344→    setCropDrawStart({ x, y })
+   345→    setIsDrawingCrop(true)
+   346→    setCropRect({ id: 'crop', x, y, w: 0, h: 0 })
+   347→  }, [tool])
+   348→
+   349→  const handleCropPointerMove = useCallback((e: React.PointerEvent) => {
+   350→    if (!isDrawingCrop || !cropDrawStart || tool !== 'crop') return
+   351→    e.preventDefault()
+   352→    const container = imageContainerRef.current
+   353→    if (!container) return
+   354→    const rect = container.getBoundingClientRect()
+   355→    const currentX = ((e.clientX - rect.left) / rect.width) * 100
+   356→    const currentY = ((e.clientY - rect.top) / rect.height) * 100
+   357→    const x = Math.min(cropDrawStart.x, currentX)
+   358→    const y = Math.min(cropDrawStart.y, currentY)
+   359→    const w = Math.abs(currentX - cropDrawStart.x)
+   360→    const h = Math.abs(currentY - cropDrawStart.y)
+   361→    setCropRect({ id: 'crop', x, y, w, h })
+   362→  }, [isDrawingCrop, cropDrawStart, tool])
+   363→
+   364→  const handleCropPointerUp = useCallback(() => {
+   365→    if (isDrawingCrop) {
+   366→      setIsDrawingCrop(false)
+   367→      setCropDrawStart(null)
+   368→    }
+   369→  }, [isDrawingCrop])
+   370→
+   371→  // ─── Marquee drawing handlers ───
+   372→  const handleMarqueePointerDown = useCallback((e: React.PointerEvent) => {
+   373→    if (tool !== 'marquee') return
+   374→    e.preventDefault()
+   375→    const container = imageContainerRef.current
+   376→    if (!container) return
+   377→    const rect = container.getBoundingClientRect()
+   378→    const x = ((e.clientX - rect.left) / rect.width) * 100
+   379→    const y = ((e.clientY - rect.top) / rect.height) * 100
+   380→    setMarqueeDrawStart({ x, y })
+   381→    setIsDrawingMarquee(true)
+   382→    const newId = `section-${Date.now()}`
+   383→    setCurrentMarqueeRect({ id: newId, x, y, w: 0, h: 0 })
+   384→  }, [tool])
+   385→
+   386→  const handleMarqueePointerMove = useCallback((e: React.PointerEvent) => {
+   387→    if (!isDrawingMarquee || !marqueeDrawStart || tool !== 'marquee') return
+   388→    e.preventDefault()
+   389→    const container = imageContainerRef.current
+   390→    if (!container) return
+   391→    const rect = container.getBoundingClientRect()
+   392→    const currentX = ((e.clientX - rect.left) / rect.width) * 100
+   393→    const currentY = ((e.clientY - rect.top) / rect.height) * 100
+   394→    const x = Math.min(marqueeDrawStart.x, currentX)
+   395→    const y = Math.min(marqueeDrawStart.y, currentY)
+   396→    const w = Math.abs(currentX - marqueeDrawStart.x)
+   397→    const h = Math.abs(currentY - marqueeDrawStart.y)
+   398→    if (currentMarqueeRect) {
+   399→      setCurrentMarqueeRect({ ...currentMarqueeRect, x, y, w, h })
+   400→    }
+   401→  }, [isDrawingMarquee, marqueeDrawStart, tool, currentMarqueeRect])
+   402→
+   403→  const handleMarqueePointerUp = useCallback(() => {
+   404→    if (isDrawingMarquee && currentMarqueeRect && currentMarqueeRect.w > 3 && currentMarqueeRect.h > 3) {
+   405→      const newSection: MarqueeSection = {
+   406→        ...currentMarqueeRect,
+   407→        category: null,
+   408→        type: '',
+   409→        detail: '',
+   410→        tags: [],
+   411→        color: '',
+   412→      }
+   413→      setMarqueeSections((prev) => [...prev, newSection])
+   414→    }
+   415→    setIsDrawingMarquee(false)
+   416→    setMarqueeDrawStart(null)
+   417→    setCurrentMarqueeRect(null)
+   418→  }, [isDrawingMarquee, currentMarqueeRect])
+   419→
+   420→  // ─── Unified pointer handlers ───
+   421→  const handlePointerDown = useCallback((e: React.PointerEvent) => {
+   422→    if (tool === 'crop') handleCropPointerDown(e)
+   423→    else if (tool === 'marquee') handleMarqueePointerDown(e)
+   424→  }, [tool, handleCropPointerDown, handleMarqueePointerDown])
+   425→
+   426→  const handlePointerMove = useCallback((e: React.PointerEvent) => {
+   427→    if (tool === 'crop') handleCropPointerMove(e)
+   428→    else if (tool === 'marquee') handleMarqueePointerMove(e)
+   429→  }, [tool, handleCropPointerMove, handleMarqueePointerMove])
+   430→
+   431→  const handlePointerUp = useCallback(() => {
+   432→    if (tool === 'crop') handleCropPointerUp()
+   433→    else if (tool === 'marquee') handleMarqueePointerUp()
+   434→  }, [tool, handleCropPointerUp, handleMarqueePointerUp])
+   435→
+   436→  // ─── Crop confirm ───
+   437→  const handleCropConfirm = useCallback(async () => {
+   438→    if (!imageSrc || !cropRect || cropRect.w < 3 || cropRect.h < 3) {
+   439→      toast.error('Draw a crop area first')
+   440→      return
+   441→    }
+   442→    try {
+   443→      const cropped = await cropImageRegion(imageSrc, {
+   444→        x: cropRect.x,
+   445→        y: cropRect.y,
+   446→        w: cropRect.w,
+   447→        h: cropRect.h,
+   448→      })
+   449→      const optimized = await optimizeDataURL(cropped)
+   450→      setImageSrc(optimized)
+   451→      setCropRect(null)
+   452→      toast.success('Cropped! Now use Cut or Marquee tool')
+   453→    } catch {
+   454→      toast.error('Crop failed. Try again.')
+   455→    }
+   456→  }, [imageSrc, cropRect])
+   457→
+   458→  // ─── Cut confirm (split into top/bottom) ───
+   459→  const handleCutConfirm = useCallback(async () => {
+   460→    if (!imageSrc) return
+   461→    const img = new Image()
+   462→    img.onload = async () => {
+   463→      const cutY = Math.round((cutPosition / 100) * img.height)
+   464→      const topCanvas = document.createElement('canvas')
+   465→      topCanvas.width = img.width
+   466→      topCanvas.height = cutY
+   467→      const topCtx = topCanvas.getContext('2d')!
+   468→      topCtx.drawImage(img, 0, 0, img.width, cutY, 0, 0, img.width, cutY)
+   469→
+   470→      const bottomCanvas = document.createElement('canvas')
+   471→      bottomCanvas.width = img.width
+   472→      bottomCanvas.height = img.height - cutY
+   473→      const bottomCtx = bottomCanvas.getContext('2d')!
+   474→      bottomCtx.drawImage(img, 0, cutY, img.width, img.height - cutY, 0, 0, img.width, img.height - cutY)
+   475→
+   476→      const [optimizedTop, optimizedBottom] = await Promise.all([
+   477→        optimizeDataURL(topCanvas.toDataURL('image/png')),
+   478→        optimizeDataURL(bottomCanvas.toDataURL('image/png')),
+   479→      ])
+   480→      setTopImageSrc(optimizedTop)
+   481→      setBottomImageSrc(optimizedBottom)
+   482→      setMode('split')
+   483→      setStep('save')
+   484→    }
+   485→    img.src = imageSrc
+   486→  }, [imageSrc, cutPosition])
+   487→
+   488→  // ─── Full suit confirm ───
+   489→  const handleFullSuitConfirm = useCallback(() => {
+   490→    setMode('full')
+   491→    setStep('save')
+   492→  }, [])
+   493→
+   494→  // ─── Marquee: select a section ───
+   495→  const handleSelectSection = useCallback((sectionId: string) => {
+   496→    setSelectedSectionId(sectionId)
+   497→    setShowTagPanel(true)
+   498→  }, [])
+   499→
+   500→  // ─── Marquee: update section tags ───
+   501→  const updateMarqueeSection = useCallback((id: string, updates: Partial<MarqueeSection>) => {
+   502→    setMarqueeSections((prev) =>
+   503→      prev.map((s) => (s.id === id ? { ...s, ...updates } : s))
+   504→    )
+   505→  }, [])
+   506→
+   507→  // ─── Marquee: delete section ───
+   508→  const deleteMarqueeSection = useCallback((id: string) => {
+   509→    setMarqueeSections((prev) => prev.filter((s) => s.id !== id))
+   510→    if (selectedSectionId === id) {
+   511→      setSelectedSectionId(null)
+   512→      setShowTagPanel(false)
+   513→    }
+   514→  }, [selectedSectionId])
+   515→
+   516→  // ─── Marquee: save all sections ───
+   517→  const handleSaveMarqueeSections = useCallback(async () => {
+   518→    if (!imageSrc || marqueeSections.length === 0) return
+   519→
+   520→    // Validate that all sections have a category
+   521→    const untagged = marqueeSections.filter((s) => !s.category)
+   522→    if (untagged.length > 0) {
+   523→      toast.error(`Please assign a category to section ${marqueeSections.indexOf(untagged[0]) + 1}`)
+   524→      return
+   525→    }
+   526→
+   527→    setIsSaving(true)
+   528→    try {
+   529→      let savedCount = 0
+   530→      for (const section of marqueeSections) {
+   531→        const cropped = await cropImageRegion(imageSrc, {
+   532→          x: section.x,
+   533→          y: section.y,
+   534→          w: section.w,
+   535→          h: section.h,
+   536→        })
+   537→        const optimized = await optimizeDataURL(cropped)
+   538→        const file = dataURLToFile(optimized, `section-${savedCount}.jpg`)
+   539→        const allTags = [section.detail, ...section.tags].filter(Boolean)
+   540→
+   541→        const success = await addClothingItem({
+   542→          category: section.category!,
+   543→          subType: section.type || section.category!.toLowerCase(),
+   544→          color: section.color,
+   545→          size: '',
+   546→          tags: allTags,
+   547→          isFavorite: false,
+   548→          imageUrl: '',
+   549→        }, file)
+   550→
+   551→        if (success) savedCount++
+   552→      }
+   553→
+   554→      if (savedCount > 0) {
+   555→        toast.success(`${savedCount} section${savedCount > 1 ? 's' : ''} saved! ✨`)
+   556→        setView('home')
+   557→      } else {
+   558→        toast.error('Failed to save sections')
+   559→      }
+   560→    } catch {
+   561→      toast.error('Failed to save sections')
+   562→    }
+   563→    setIsSaving(false)
+   564→  }, [imageSrc, marqueeSections, addClothingItem, setView])
+   565→
+   566→  // ─── Save split (top/bottom) ───
+   567→  const handleSaveSplit = async () => {
+   568→    if (!topImageSrc || !bottomImageSrc) return
+   569→    setIsSaving(true)
+   570→    try {
+   571→      const topFile = dataURLToFile(topImageSrc, 'top.jpg')
+   572→      const topAllTags = [topDetail, ...topTags].filter(Boolean)
+   573→
+   574→      const topSuccess = await addClothingItem({
+   575→        category: 'TOP',
+   576→        subType: topType || 'Top',
+   577→        color: topColor,
+   578→        size: '',
+   579→        tags: topAllTags,
+   580→        isFavorite: false,
+   581→        imageUrl: '',
+   582→      }, topFile)
+   583→
+   584→      const bottomFile = dataURLToFile(bottomImageSrc, 'bottom.jpg')
+   585→      const bottomAllTags = [bottomDetail, ...bottomTags].filter(Boolean)
+   586→
+   587→      const bottomSuccess = await addClothingItem({
+   588→        category: 'BOTTOM',
+   589→        subType: bottomType || 'Bottom',
+   590→        color: bottomColor,
+   591→        size: '',
+   592→        tags: bottomAllTags,
+   593→        isFavorite: false,
+   594→        imageUrl: '',
+   595→      }, bottomFile)
+   596→
+   597→      if (topSuccess && bottomSuccess) {
+   598→        toast.success('Top & bottom saved! 👕👖✨')
+   599→        setView('home')
+   600→      } else {
+   601→        toast.error('Failed to save some items')
+   602→      }
+   603→    } catch {
+   604→      toast.error('Failed to save items')
+   605→    }
+   606→    setIsSaving(false)
+   607→  }
+   608→
+   609→  // ─── Save full suit ───
+   610→  const handleSaveFull = async () => {
+   611→    if (!imageSrc) return
+   612→    setIsSaving(true)
+   613→    try {
+   614→      const optimizedSrc = await optimizeDataURL(imageSrc)
+   615→      const file = dataURLToFile(optimizedSrc, 'outfit.jpg')
+   616→      const allTags = [fullDetail, ...fullTags].filter(Boolean)
+   617→
+   618→      const success = await addClothingItem({
+   619→        category: 'FULL_SUIT',
+   620→        subType: fullType || 'Full Outfit',
+   621→        color: fullColor,
+   622→        size: '',
+   623→        tags: allTags,
+   624→        isFavorite: false,
+   625→        imageUrl: '',
+   626→      }, file)
+   627→
+   628→      if (success) {
+   629→        toast.success('Full outfit saved! 👗✨')
+   630→        setView('home')
+   631→      } else {
+   632→        toast.error('Failed to save outfit')
+   633→      }
+   634→    } catch {
+   635→      toast.error('Failed to save outfit')
+   636→    }
+   637→    setIsSaving(false)
+   638→  }
+   639→
+   640→  // ─── Reset everything ───
+   641→  const resetAll = () => {
+   642→    setStep('capture')
+   643→    setImageSrc(null)
+   644→    setOriginalImageSrc(null)
+   645→    setCutPosition(50)
+   646→    setTool('cut')
+   647→    setCropRect(null)
+   648→    setMarqueeSections([])
+   649→    setCurrentMarqueeRect(null)
+   650→    setSelectedSectionId(null)
+   651→    setShowTagPanel(false)
+   652→    setMode('split')
+   653→    setTopType(''); setTopDetail(''); setTopTags([]); setTopColor('')
+   654→    setBottomType(''); setBottomDetail(''); setBottomTags([]); setBottomColor('')
+   655→    setFullType(''); setFullDetail(''); setFullTags([]); setFullColor('')
+   656→    setTopImageSrc(null); setBottomImageSrc(null)
+   657→    setOutfitName('')
+   658→  }
+   659→
+   660→  // ─── Render cascading tag selector ───
+   661→  const renderCascadingTags = (
+   662→    typeTree: Record<string, Record<string, string[]>>,
+   663→    selectedType: string,
+   664→    setSelectedType: (v: string) => void,
+   665→    selectedDetail: string,
+   666→    setSelectedDetail: (v: string) => void,
+   667→    selectedTags: string[],
+   668→    toggleTag: (tag: string) => void,
+   669→    accentColor: string = 'rose'
+   670→  ) => {
+   671→    const types = Object.keys(typeTree)
+   672→    const details = selectedType ? Object.keys(typeTree[selectedType] || {}) : []
+   673→    const tags = selectedType && selectedDetail ? (typeTree[selectedType][selectedDetail] || []) : []
+   674→    const bgActive = accentColor === 'sky' ? 'bg-sky-500' : accentColor === 'emerald' ? 'bg-emerald-500' : 'bg-rose-500'
+   675→    const bgInactive = accentColor === 'sky'
+   676→      ? 'bg-sky-50 text-sky-700 hover:bg-sky-100'
+   677→      : accentColor === 'emerald'
+   678→        ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100'
+   679→        : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+   680→
+   681→    return (
+   682→      <div className="space-y-3">
+   683→        {/* Row 1: Type */}
+   684→        <div>
+   685→          <p className="text-xs font-semibold mb-1.5">Type</p>
+   686→          <div className="flex flex-wrap gap-2">
+   687→            {types.map((type) => (
+   688→              <button
+   689→                key={type}
+   690→                onClick={() => { setSelectedType(type); setSelectedDetail('') }}
+   691→                className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   692→                  selectedType === type ? `${bgActive} text-white shadow-sm` : bgInactive
+   693→                }`}
+   694→              >
+   695→                {type}
+   696→              </button>
+   697→            ))}
+   698→          </div>
+   699→        </div>
+   700→
+   701→        {/* Row 2: Detail */}
+   702→        {selectedType && details.length > 0 && (
+   703→          <div>
+   704→            <p className="text-xs font-semibold mb-1.5">{selectedType} Style</p>
+   705→            <div className="flex flex-wrap gap-2">
+   706→              {details.map((detail) => (
+   707→                <button
+   708→                  key={detail}
+   709→                  onClick={() => setSelectedDetail(detail)}
+   710→                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   711→                    selectedDetail === detail ? `${bgActive} text-white shadow-sm` : bgInactive
+   712→                  }`}
+   713→                >
+   714→                  {detail}
+   715→                </button>
+   716→              ))}
+   717→            </div>
+   718→          </div>
+   719→        )}
+   720→
+   721→        {/* Row 3: Specific tags */}
+   722→        {selectedDetail && tags.length > 0 && (
+   723→          <div>
+   724→            <p className="text-xs font-semibold mb-1.5">Details <span className="text-muted-foreground font-normal">(tap to select)</span></p>
+   725→            <div className="flex flex-wrap gap-2">
+   726→              {tags.map((tag) => (
+   727→                <button
+   728→                  key={tag}
+   729→                  onClick={() => toggleTag(tag)}
+   730→                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   731→                    selectedTags.includes(tag) ? `${bgActive} text-white shadow-sm` : bgInactive
+   732→                  }`}
+   733→                >
+   734→                  {tag}
+   735→                </button>
+   736→              ))}
+   737→            </div>
+   738→          </div>
+   739→        )}
+   740→
+   741→        {/* Season / Occasion */}
+   742→        {selectedType && (
+   743→          <div>
+   744→            <p className="text-xs font-semibold mb-1.5">Season & Occasion</p>
+   745→            <div className="flex flex-wrap gap-2">
+   746→              {seasonOccasionTags.map((tag) => (
+   747→                <button
+   748→                  key={tag}
+   749→                  onClick={() => toggleTag(tag)}
+   750→                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   751→                    selectedTags.includes(tag) ? `${bgActive} text-white shadow-sm` : bgInactive
+   752→                  }`}
+   753→                >
+   754→                  {tag}
+   755→                </button>
+   756→              ))}
+   757→            </div>
+   758→          </div>
+   759→        )}
+   760→      </div>
+   761→    )
+   762→  }
+   763→
+   764→  // ─── Render color picker ───
+   765→  const renderColorPicker = (
+   766→    selectedColor: string,
+   767→    setSelectedColor: (v: string) => void
+   768→  ) => (
+   769→    <div>
+   770→      <p className="text-xs font-semibold mb-2">Color</p>
+   771→      <div className="flex flex-wrap gap-2.5">
+   772→        {colorPalette.map(({ key, label, hex }) => (
+   773→          <button
+   774→            key={key}
+   775→            onClick={() => setSelectedColor(selectedColor === key ? '' : key)}
+   776→            className={`w-9 h-9 rounded-full border-2 transition-all relative ${
+   777→              selectedColor === key
+   778→                ? 'border-rose-500 scale-125 ring-2 ring-rose-200'
+   779→                : 'border-gray-200 hover:border-rose-300 hover:scale-110'
+   780→            }`}
+   781→            style={key === 'multi'
+   782→              ? { background: 'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f)' }
+   783→              : { backgroundColor: hex }
+   784→            }
+   785→            title={label}
+   786→          >
+   787→            {selectedColor === key && (
+   788→              <Check className={`w-4 h-4 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${
+   789→                ['white', 'cream', 'yellow', 'beige', 'peach', 'lavender', 'silver'].includes(key) ? 'text-gray-700' : 'text-white'
+   790→              }`} />
+   791→            )}
+   792→          </button>
+   793→        ))}
+   794→      </div>
+   795→      {selectedColor && (
+   796→        <p className="text-xs text-muted-foreground mt-1">Selected: {colorPalette.find(c => c.key === selectedColor)?.label}</p>
+   797→      )}
+   798→    </div>
+   799→  )
+   800→
+   801→  // ─── Selected marquee section for tag panel ───
+   802→  const selectedSection = marqueeSections.find((s) => s.id === selectedSectionId)
+   803→
+   804→  return (
+   805→    <div className="flex flex-col h-full">
+   806→      {/* Header */}
+   807→      <div className="px-4 pt-4 pb-2 flex items-center gap-3">
+   808→        <button
+   809→          onClick={() => {
+   810→            if (step === 'capture') setView('home')
+   811→            else if (step === 'edit') resetAll()
+   812→            else setStep('edit')
+   813→          }}
+   814→          className="text-rose-500 hover:text-rose-600"
+   815→        >
+   816→          <ArrowLeft className="w-5 h-5" />
+   817→        </button>
+   818→        <div className="flex-1">
+   819→          <h1 className="text-xl font-bold text-rose-900">Save an Outfit</h1>
+   820→          <p className="text-xs text-muted-foreground mt-0.5">
+   821→            {step === 'capture'
+   822→              ? 'Take or upload a photo'
+   823→              : step === 'edit'
+   824→                ? 'Crop, cut, or select areas'
+   825→                : 'Add details & save'}
+   826→          </p>
+   827→        </div>
+   828→        <div className="flex gap-1.5">
+   829→          <div className={`w-6 h-1.5 rounded-full ${step === 'capture' ? 'bg-rose-500' : 'bg-rose-200'}`} />
+   830→          <div className={`w-6 h-1.5 rounded-full ${step === 'edit' ? 'bg-rose-500' : 'bg-rose-200'}`} />
+   831→          <div className={`w-6 h-1.5 rounded-full ${step === 'save' ? 'bg-rose-500' : 'bg-rose-200'}`} />
+   832→        </div>
+   833→      </div>
+   834→
+   835→      {/* Content */}
+   836→      <div className="flex-1 overflow-y-auto custom-scrollbar">
+   837→        <AnimatePresence mode="wait">
+   838→          {/* ═══════════════ CAPTURE STEP ═══════════════ */}
+   839→          {step === 'capture' && (
+   840→            <motion.div
+   841→              key="capture"
+   842→              initial={{ opacity: 0, x: -20 }}
+   843→              animate={{ opacity: 1, x: 0 }}
+   844→              exit={{ opacity: 0, x: 20 }}
+   845→              className="px-4 py-8 flex flex-col items-center"
+   846→            >
+   847→              <div className="w-32 h-32 rounded-full bg-rose-50 flex items-center justify-center mb-6">
+   848→                <Camera className="w-14 h-14 text-rose-300" />
+   849→              </div>
+   850→              <h2 className="text-lg font-semibold text-rose-900 mb-2">Snap Your Outfit</h2>
+   851→              <p className="text-sm text-muted-foreground text-center mb-8 max-w-xs">
+   852→                Take a full-body photo or upload from gallery. Crop a person, cut into top &amp; bottom, or select multiple areas.
+   853→              </p>
+   854→
+   855→              {/* Hidden inputs */}
+   856→              <input
+   857→                ref={cameraInputRef}
+   858→                type="file"
+   859→                accept="image/*"
+   860→                capture="environment"
+   861→                className="hidden"
+   862→                onChange={handleFileSelect}
+   863→              />
+   864→              <input
+   865→                ref={galleryInputRef}
+   866→                type="file"
+   867→                accept="image/*"
+   868→                className="hidden"
+   869→                onChange={handleFileSelect}
+   870→              />
+   871→
+   872→              <div className="flex flex-col gap-3 w-full max-w-xs">
+   873→                <Button
+   874→                  onClick={() => cameraInputRef.current?.click()}
+   875→                  className="h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+   876→                >
+   877→                  <Camera className="w-5 h-5 mr-2" />
+   878→                  Take Photo
+   879→                </Button>
+   880→                <Button
+   881→                  variant="outline"
+   882→                  onClick={() => galleryInputRef.current?.click()}
+   883→                  className="h-12 rounded-xl border-rose-200 text-rose-700 font-semibold"
+   884→                >
+   885→                  <ImagePlus className="w-5 h-5 mr-2" />
+   886→                  Upload from Gallery
+   887→                </Button>
+   888→              </div>
+   889→            </motion.div>
+   890→          )}
+   891→
+   892→          {/* ═══════════════ EDIT STEP ═══════════════ */}
+   893→          {step === 'edit' && imageSrc && (
+   894→            <motion.div
+   895→              key="edit"
+   896→              initial={{ opacity: 0, x: 20 }}
+   897→              animate={{ opacity: 1, x: 0 }}
+   898→              exit={{ opacity: 0, x: -20 }}
+   899→              className="px-4 py-4"
+   900→            >
+   901→              {/* Tool selector */}
+   902→              <div className="flex items-center justify-center gap-2 mb-3">
+   903→                <button
+   904→                  onClick={() => { setTool('crop'); setCropRect(null); setShowTagPanel(false) }}
+   905→                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   906→                    tool === 'crop' ? 'bg-rose-500 text-white shadow-sm' : 'bg-rose-50 text-rose-700'
+   907→                  }`}
+   908→                >
+   909→                  <Crop className="w-4 h-4" />
+   910→                  Crop
+   911→                </button>
+   912→                <button
+   913→                  onClick={() => { setTool('cut'); setCropRect(null); setShowTagPanel(false) }}
+   914→                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   915→                    tool === 'cut' ? 'bg-rose-500 text-white shadow-sm' : 'bg-rose-50 text-rose-700'
+   916→                  }`}
+   917→                >
+   918→                  <Scissors className="w-4 h-4" />
+   919→                  Cut
+   920→                </button>
+   921→                <button
+   922→                  onClick={() => { setTool('marquee'); setCropRect(null); setShowTagPanel(false) }}
+   923→                  className={`flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   924→                    tool === 'marquee' ? 'bg-rose-500 text-white shadow-sm' : 'bg-rose-50 text-rose-700'
+   925→                  }`}
+   926→                >
+   927→                  <MousePointer2 className="w-4 h-4" />
+   928→                  Marquee
+   929→                </button>
+   930→              </div>
+   931→
+   932→              {/* Tool hint */}
+   933→              <p className="text-xs text-center text-muted-foreground mb-3">
+   934→                {tool === 'crop' && '↔ Draw a rectangle to crop a person or area'}
+   935→                {tool === 'cut' && '↕ Drag the scissors line to split top & bottom'}
+   936→                {tool === 'marquee' && '↔ Draw rectangles on each area, then tap to assign tags'}
+   937→              </p>
+   938→
+   939→              {/* Image container with overlays */}
+   940→              <div
+   941→                ref={imageContainerRef}
+   942→                className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden border-2 border-rose-200 bg-rose-50 select-none"
+   943→                style={{ touchAction: 'none' }}
+   944→                onPointerDown={handlePointerDown}
+   945→                onPointerMove={handlePointerMove}
+   946→                onPointerUp={handlePointerUp}
+   947→                onPointerLeave={handlePointerUp}
+   948→                // Cut drag handlers
+   949→                onMouseMove={tool === 'cut' ? (e) => handleCutDragMove(e.clientY) : undefined}
+   950→                onMouseUp={tool === 'cut' ? handleCutDragEnd : undefined}
+   951→                onMouseLeave={tool === 'cut' ? handleCutDragEnd : undefined}
+   952→                onTouchMove={tool === 'cut' ? (e) => handleCutDragMove(e.touches[0].clientY) : undefined}
+   953→                onTouchEnd={tool === 'cut' ? handleCutDragEnd : undefined}
+   954→              >
+   955→                <img src={imageSrc} alt="Your outfit" className="w-full h-full object-cover" draggable={false} />
+   956→
+   957→                {/* ─── Cut overlay ─── */}
+   958→                {tool === 'cut' && (
+   959→                  <>
+   960→                    <div className="absolute top-0 left-0 right-0 bg-rose-500/10 pointer-events-none transition-all" style={{ height: `${cutPosition}%` }} />
+   961→                    <div className="absolute bottom-0 left-0 right-0 bg-sky-500/10 pointer-events-none transition-all" style={{ height: `${100 - cutPosition}%` }} />
+   962→                    <div className="absolute top-3 left-3 px-2 py-1 bg-rose-500 text-white text-[10px] font-bold rounded-lg pointer-events-none">👕 TOP</div>
+   963→                    <div className="absolute bottom-3 left-3 px-2 py-1 bg-sky-500 text-white text-[10px] font-bold rounded-lg pointer-events-none">👖 BOTTOM</div>
+   964→                    <div
+   965→                      className="absolute left-0 right-0 flex items-center justify-center cursor-row-resize z-10"
+   966→                      style={{ top: `${cutPosition}%`, transform: 'translateY(-50%)' }}
+   967→                      onMouseDown={handleCutDragStart}
+   968→                      onTouchStart={handleCutDragStart}
+   969→                    >
+   970→                      <div className="w-full h-1 bg-rose-500 shadow-lg" />
+   971→                      <div className="absolute w-10 h-10 rounded-full bg-rose-500 border-4 border-white shadow-lg flex items-center justify-center">
+   972→                        <Scissors className="w-4 h-4 text-white" />
+   973→                      </div>
+   974→                    </div>
+   975→                  </>
+   976→                )}
+   977→
+   978→                {/* ─── Crop overlay ─── */}
+   979→                {tool === 'crop' && cropRect && cropRect.w > 0 && cropRect.h > 0 && (
+   980→                  <>
+   981→                    {/* Dim outside crop area using box-shadow technique */}
+   982→                    <div
+   983→                      className="absolute pointer-events-none"
+   984→                      style={{
+   985→                        left: `${cropRect.x}%`,
+   986→                        top: `${cropRect.y}%`,
+   987→                        width: `${cropRect.w}%`,
+   988→                        height: `${cropRect.h}%`,
+   989→                        boxShadow: '0 0 0 9999px rgba(0,0,0,0.45)',
+   990→                        borderRadius: '0.5rem',
+   991→                      }}
+   992→                    />
+   993→                    <div
+   994→                      className="absolute border-2 border-white border-dashed rounded-lg pointer-events-none"
+   995→                      style={{
+   996→                        left: `${cropRect.x}%`,
+   997→                        top: `${cropRect.y}%`,
+   998→                        width: `${cropRect.w}%`,
+   999→                        height: `${cropRect.h}%`,
+  1000→                      }}
+  1001→                    >
+  1002→                      {/* Corner handles */}
+  1003→                      <div className="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white rounded-full shadow-md" />
+  1004→                      <div className="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white rounded-full shadow-md" />
+  1005→                      <div className="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white rounded-full shadow-md" />
+  1006→                      <div className="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white rounded-full shadow-md" />
+  1007→                    </div>
+  1008→                  </>
+  1009→                )}
+  1010→
+  1011→                {/* ─── Marquee overlays ─── */}
+  1012→                {tool === 'marquee' && (
+  1013→                  <>
+  1014→                    {/* Existing sections */}
+  1015→                    {marqueeSections.map((section, idx) => {
+  1016→                      const colorClass = sectionColors[idx % sectionColors.length]
+  1017→                      const badgeColor = sectionBadgeColors[idx % sectionBadgeColors.length]
+  1018→                      const isSelected = selectedSectionId === section.id
+  1019→                      return (
+  1020→                        <div
+  1021→                          key={section.id}
+  1022→                          className={`absolute border-2 rounded-lg cursor-pointer transition-all ${colorClass} ${
+  1023→                            isSelected ? 'ring-2 ring-white ring-offset-1 ring-offset-transparent' : ''
+  1024→                          }`}
+  1025→                          style={{
+  1026→                            left: `${section.x}%`,
+  1027→                            top: `${section.y}%`,
+  1028→                            width: `${section.w}%`,
+  1029→                            height: `${section.h}%`,
+  1030→                          }}
+  1031→                          onPointerDown={(e) => {
+  1032→                            e.stopPropagation()
+  1033→                            handleSelectSection(section.id)
+  1034→                          }}
+  1035→                        >
+  1036→                          <span className={`absolute -top-3 -left-1 w-6 h-6 ${badgeColor} text-white text-[10px] font-bold rounded-full flex items-center justify-center shadow`}>
+  1037→                            {idx + 1}
+  1038→                          </span>
+  1039→                          {section.category && (
+  1040→                            <span className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-white/90 text-[9px] font-medium rounded">
+  1041→                              {section.category}
+  1042→                            </span>
+  1043→                          )}
+  1044→                        </div>
+  1045→                      )
+  1046→                    })}
+  1047→
+  1048→                    {/* Current drawing rect */}
+  1049→                    {currentMarqueeRect && currentMarqueeRect.w > 0 && currentMarqueeRect.h > 0 && (
+  1050→                      <div
+  1051→                        className="absolute border-2 border-rose-400 border-dashed bg-rose-400/20 rounded-lg pointer-events-none"
+  1052→                        style={{
+  1053→                          left: `${currentMarqueeRect.x}%`,
+  1054→                          top: `${currentMarqueeRect.y}%`,
+  1055→                          width: `${currentMarqueeRect.w}%`,
+  1056→                          height: `${currentMarqueeRect.h}%`,
+  1057→                        }}
+  1058→                      />
+  1059→                    )}
+  1060→                  </>
+  1061→                )}
+  1062→              </div>
+  1063→
+  1064→              {/* ─── Marquee section summary ─── */}
+  1065→              {tool === 'marquee' && marqueeSections.length > 0 && !showTagPanel && (
+  1066→                <div className="mt-3 space-y-2">
+  1067→                  <p className="text-xs font-semibold text-rose-900">Sections ({marqueeSections.length})</p>
+  1068→                  <div className="space-y-1.5">
+  1069→                    {marqueeSections.map((section, idx) => {
+  1070→                      const badgeColor = sectionBadgeColors[idx % sectionBadgeColors.length]
+  1071→                      return (
+  1072→                        <div
+  1073→                          key={section.id}
+  1074→                          className="flex items-center gap-2 p-2 bg-white rounded-xl border border-rose-100 cursor-pointer active:bg-rose-50"
+  1075→                          onClick={() => handleSelectSection(section.id)}
+  1076→                        >
+  1077→                          <span className={`w-7 h-7 ${badgeColor} text-white text-xs font-bold rounded-full flex items-center justify-center shrink-0`}>
+  1078→                            {idx + 1}
+  1079→                          </span>
+  1080→                          <div className="flex-1 min-w-0">
+  1081→                            {section.category ? (
+  1082→                              <p className="text-xs font-medium truncate">
+  1083→                                {section.category} → {section.type || '...'} {section.color && `• ${section.color}`}
+  1084→                              </p>
+  1085→                            ) : (
+  1086→                              <p className="text-xs text-muted-foreground italic">Tap to assign tags</p>
+  1087→                            )}
+  1088→                          </div>
+  1089→                          <button
+  1090→                            onClick={(e) => { e.stopPropagation(); deleteMarqueeSection(section.id) }}
+  1091→                            className="p-1 text-rose-400 hover:text-rose-600"
+  1092→                          >
+  1093→                            <Trash2 className="w-3.5 h-3.5" />
+  1094→                          </button>
+  1095→                        </div>
+  1096→                      )
+  1097→                    })}
+  1098→                  </div>
+  1099→                </div>
+  1100→              )}
+  1101→
+  1102→              {/* ─── Marquee tag panel (bottom sheet style) ─── */}
+  1103→              {tool === 'marquee' && showTagPanel && selectedSection && (
+  1104→                <div className="mt-3 p-3 rounded-xl border border-rose-200 bg-rose-50/80 space-y-3">
+  1105→                  <div className="flex items-center justify-between">
+  1106→                    <p className="text-sm font-semibold text-rose-700">
+  1107→                      <Tag className="inline w-4 h-4 mr-1" />
+  1108→                      Tag Section
+  1109→                    </p>
+  1110→                    <button
+  1111→                      onClick={() => { setShowTagPanel(false); setSelectedSectionId(null) }}
+  1112→                      className="p-1 text-rose-400 hover:text-rose-600"
+  1113→                    >
+  1114→                      <X className="w-4 h-4" />
+  1115→                    </button>
+  1116→                  </div>
+  1117→
+  1118→                  {/* Category */}
+  1119→                  <div>
+  1120→                    <p className="text-xs font-semibold mb-1.5">Category</p>
+  1121→                    <div className="flex flex-wrap gap-2">
+  1122→                      {categoryOptions.map(({ key, label, icon }) => (
+  1123→                        <button
+  1124→                          key={key}
+  1125→                          onClick={() => {
+  1126→                            updateMarqueeSection(selectedSection.id, {
+  1127→                              category: key,
+  1128→                              type: '',
+  1129→                              detail: '',
+  1130→                              tags: [],
+  1131→                            })
+  1132→                          }}
+  1133→                          className={`flex items-center gap-1 px-3 py-2 rounded-xl text-sm font-medium transition-all ${
+  1134→                            selectedSection.category === key
+  1135→                              ? 'bg-rose-500 text-white shadow-sm'
+  1136→                              : 'bg-white text-rose-700 hover:bg-rose-100'
+  1137→                          }`}
+  1138→                        >
+  1139→                          <span>{icon}</span>
+  1140→                          {label}
+  1141→                        </button>
+  1142→                      ))}
+  1143→                    </div>
+  1144→                  </div>
+  1145→
+  1146→                  {/* Cascading tags */}
+  1147→                  {selectedSection.category && renderCascadingTags(
+  1148→                    getTypeTreeForCategory(selectedSection.category),
+  1149→                    selectedSection.type,
+  1150→                    (v) => updateMarqueeSection(selectedSection.id, { type: v, detail: '', tags: [] }),
+  1151→                    selectedSection.detail,
+  1152→                    (v) => updateMarqueeSection(selectedSection.id, { detail: v, tags: [] }),
+  1153→                    selectedSection.tags,
+  1154→                    (tag) => {
+  1155→                      const newTags = selectedSection.tags.includes(tag)
+  1156→                        ? selectedSection.tags.filter((t) => t !== tag)
+  1157→                        : [...selectedSection.tags, tag]
+  1158→                      updateMarqueeSection(selectedSection.id, { tags: newTags })
+  1159→                    },
+  1160→                    selectedSection.category === 'BOTTOM' ? 'sky' : selectedSection.category === 'SHOES' ? 'emerald' : 'rose'
+  1161→                  )}
+  1162→
+  1163→                  {/* Color */}
+  1164→                  {selectedSection.category && renderColorPicker(
+  1165→                    selectedSection.color,
+  1166→                    (v) => updateMarqueeSection(selectedSection.id, { color: v })
+  1167→                  )}
+  1168→
+  1169→                  <Button
+  1170→                    onClick={() => { setShowTagPanel(false); setSelectedSectionId(null) }}
+  1171→                    className="w-full h-10 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold text-sm"
+  1172→                  >
+  1173→                    <Check className="w-4 h-4 mr-1" />
+  1174→                    Done
+  1175→                  </Button>
+  1176→                </div>
+  1177→              )}
+  1178→            </motion.div>
+  1179→          )}
+  1180→
+  1181→          {/* ═══════════════ SAVE STEP ═══════════════ */}
+  1182→          {step === 'save' && (
+  1183→            <motion.div
+  1184→              key="save"
+  1185→              initial={{ opacity: 0, x: 20 }}
+  1186→              animate={{ opacity: 1, x: 0 }}
+  1187→              exit={{ opacity: 0, x: -20 }}
+  1188→              className="px-4 py-4 space-y-4"
+  1189→            >
+  1190→              {/* Preview */}
+  1191→              <div className="flex gap-3">
+  1192→                {mode === 'split' ? (
+  1193→                  <>
+  1194→                    <div className="flex-1 rounded-xl overflow-hidden border border-rose-200 aspect-[3/4]">
+  1195→                      {topImageSrc && <img src={topImageSrc} alt="Top" className="w-full h-full object-cover" />}
+  1196→                    </div>
+  1197→                    <div className="flex-1 rounded-xl overflow-hidden border border-sky-200 aspect-[3/4]">
+  1198→                      {bottomImageSrc && <img src={bottomImageSrc} alt="Bottom" className="w-full h-full object-cover" />}
+  1199→                    </div>
+  1200→                  </>
+  1201→                ) : (
+  1202→                  <div className="flex-1 rounded-xl overflow-hidden border border-rose-200 aspect-[3/4] max-w-[200px] mx-auto">
+  1203→                    {imageSrc && <img src={imageSrc} alt="Full outfit" className="w-full h-full object-cover" />}
+  1204→                  </div>
+  1205→                )}
+  1206→              </div>
+  1207→
+  1208→              {/* Outfit name */}
+  1209→              <div>
+  1210→                <p className="text-xs font-medium text-rose-700 mb-1">Outfit Name</p>
+  1211→                <input
+  1212→                  type="text"
+  1213→                  placeholder="e.g., Office Monday"
+  1214→                  value={outfitName}
+  1215→                  onChange={(e) => setOutfitName(e.target.value)}
+  1216→                  className="w-full h-11 px-3 rounded-xl border border-rose-200 text-sm focus:border-rose-400 focus:outline-none"
+  1217→                />
+  1218→              </div>
+  1219→
+  1220→              {mode === 'split' ? (
+  1221→                <div className="space-y-4">
+  1222→                  {/* ─── TOP section ─── */}
+  1223→                  <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50 space-y-3">
+  1224→                    <p className="text-sm font-semibold text-rose-700">👕 Top</p>
+  1225→                    {renderCascadingTags(topTypes, topType, setTopType, topDetail, setTopDetail, topTags, (tag) => setTopTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'rose')}
+  1226→                    {renderColorPicker(topColor, setTopColor)}
+  1227→                  </div>
+  1228→
+  1229→                  {/* ─── BOTTOM section ─── */}
+  1230→                  <div className="p-3 rounded-xl border border-sky-200 bg-sky-50/50 space-y-3">
+  1231→                    <p className="text-sm font-semibold text-sky-700">👖 Bottom</p>
+  1232→                    {renderCascadingTags(bottomTypes, bottomType, setBottomType, bottomDetail, setBottomDetail, bottomTags, (tag) => setBottomTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'sky')}
+  1233→                    {renderColorPicker(bottomColor, setBottomColor)}
+  1234→                  </div>
+  1235→                </div>
+  1236→              ) : (
+  1237→                <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50 space-y-3">
+  1238→                  <p className="text-sm font-semibold text-rose-700">👗 Full Suit</p>
+  1239→                  {renderCascadingTags(fullSuitTypes, fullType, setFullType, fullDetail, setFullDetail, fullTags, (tag) => setFullTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'rose')}
+  1240→                  {renderColorPicker(fullColor, setFullColor)}
+  1241→                </div>
+  1242→              )}
+  1243→            </motion.div>
+  1244→          )}
+  1245→        </AnimatePresence>
+  1246→      </div>
+  1247→
+  1248→      {/* Bottom actions */}
+  1249→      <div className="px-4 py-3 border-t border-rose-100 bg-white/80 backdrop-blur-sm">
+  1250→        {step === 'edit' && (
+  1251→          <div className="space-y-2">
+  1252→            {/* Crop actions */}
+  1253→            {tool === 'crop' && (
+  1254→              <div className="flex gap-3">
+  1255→                <Button
+  1256→                  variant="outline"
+  1257→                  onClick={() => setCropRect(null)}
+  1258→                  className="flex-1 h-11 rounded-xl border-rose-200 text-rose-700"
+  1259→                >
+  1260→                  <RotateCcw className="w-4 h-4 mr-1" />
+  1261→                  Reset
+  1262→                </Button>
+  1263→                <Button
+  1264→                  onClick={handleCropConfirm}
+  1265→                  disabled={!cropRect || cropRect.w < 3 || cropRect.h < 3}
+  1266→                  className="flex-[2] h-11 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+  1267→                >
+  1268→                  <Crop className="w-4 h-4 mr-1" />
+  1269→                  Crop Image
+  1270→                </Button>
+  1271→              </div>
+  1272→            )}
+  1273→
+  1274→            {/* Cut actions */}
+  1275→            {tool === 'cut' && (
+  1276→              <div className="flex gap-3">
+  1277→                <Button
+  1278→                  variant="outline"
+  1279→                  onClick={resetAll}
+  1280→                  className="flex-1 h-11 rounded-xl border-rose-200 text-rose-700"
+  1281→                >
+  1282→                  <RotateCcw className="w-4 h-4 mr-1" />
+  1283→                  Retake
+  1284→                </Button>
+  1285→                <Button
+  1286→                  onClick={handleCutConfirm}
+  1287→                  className="flex-[2] h-11 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+  1288→                >
+  1289→                  <Scissors className="w-4 h-4 mr-1" />
+  1290→                  Confirm Cut
+  1291→                </Button>
+  1292→                <Button
+  1293→                  onClick={handleFullSuitConfirm}
+  1294→                  variant="outline"
+  1295→                  className="h-11 rounded-xl border-rose-200 text-rose-700"
+  1296→                >
+  1297→                  <Shirt className="w-4 h-4 mr-1" />
+  1298→                  Full Suit
+  1299→                </Button>
+  1300→              </div>
+  1301→            )}
+  1302→
+  1303→            {/* Marquee actions */}
+  1304→            {tool === 'marquee' && (
+  1305→              <div className="flex gap-3">
+  1306→                <Button
+  1307→                  variant="outline"
+  1308→                  onClick={resetAll}
+  1309→                  className="flex-1 h-11 rounded-xl border-rose-200 text-rose-700"
+  1310→                >
+  1311→                  <RotateCcw className="w-4 h-4 mr-1" />
+  1312→                  Reset
+  1313→                </Button>
+  1314→                <Button
+  1315→                  onClick={handleSaveMarqueeSections}
+  1316→                  disabled={isSaving || marqueeSections.length === 0}
+  1317→                  className="flex-[2] h-11 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+  1318→                >
+  1319→                  {isSaving ? 'Saving...' : `Save All (${marqueeSections.length})`}
+  1320→                </Button>
+  1321→              </div>
+  1322→            )}
+  1323→          </div>
+  1324→        )}
+  1325→
+  1326→        {step === 'save' && (
+  1327→          <Button
+  1328→            onClick={mode === 'split' ? handleSaveSplit : handleSaveFull}
+  1329→            disabled={isSaving}
+  1330→            className="w-full h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+  1331→          >
+  1332→            {isSaving ? 'Saving...' : 'Save to Wardrobe ✨'}
+  1333→          </Button>
+  1334→        )}
+  1335→      </div>
+  1336→    </div>
+  1337→  )
+  1338→}
+  1339→

@@ -1,0 +1,669 @@
+     1→     1→'use client'
+     2→     2→
+     3→     3→import { useState, useRef, useCallback } from 'react'
+     4→     4→import { motion, AnimatePresence } from 'framer-motion'
+     5→     5→import { ArrowLeft, Camera, ImagePlus, Scissors, Check, RotateCcw, Shirt } from 'lucide-react'
+     6→     6→import { Button } from '@/components/ui/button'
+     7→     7→import { useStore, type ClothingCategory } from '@/lib/store'
+     8→     8→import { optimizeDataURL, dataURLToFile } from '@/lib/image-utils'
+     9→     9→import { toast } from 'sonner'
+    10→    10→
+    11→    11→type SaveStep = 'capture' | 'cut' | 'save'
+    12→    12→
+    13→    13→// ─── Cascading type tree for SaveOutfitView ───
+    14→    14→const topTypes: Record<string, Record<string, string[]>> = {
+    15→    15→  'T-Shirt': {
+    16→    16→    'Short Sleeves': ['Round Neck', 'V Neck', 'Graphic', 'Plain'],
+    17→    17→    'Long Sleeves': ['Round Neck', 'V Neck', 'Turtle Neck'],
+    18→    18→    'Sleeveless': ['Tank Top', 'Muscle Tee'],
+    19→    19→  },
+    20→    20→  'Shirt': {
+    21→    21→    'Short Sleeves': ['Casual', 'Formal', 'Linen'],
+    22→    22→    'Long Sleeves': ['Casual', 'Formal', 'Denim', 'Flannel'],
+    23→    23→  },
+    24→    24→  'Blouse': {
+    25→    25→    'Short Sleeves': ['Round Neck', 'V Neck', 'Ruffle'],
+    26→    26→    'Long Sleeves': ['Button-up', 'Wrap', 'Pleated'],
+    27→    27→    'Sleeveless': ['Camisole', 'Tank', 'Halter'],
+    28→    28→  },
+    29→    29→  'Jacket': {
+    30→    30→    'Casual': ['Denim', 'Bomber', 'Varsity'],
+    31→    31→    'Formal': ['Blazer', 'Sport Coat'],
+    32→    32→    'Winter': ['Puffer', 'Parka', 'Leather'],
+    33→    33→  },
+    34→    34→  'Sweater': {
+    35→    35→    'Pullover': ['Crew Neck', 'V Neck', 'Turtle Neck'],
+    36→    36→    'Cardigan': ['Button-up', 'Open Front'],
+    37→    37→  },
+    38→    38→  'Hoodie': {
+    39→    39→    'Pullover': ['Kangaroo Pocket', 'Cropped'],
+    40→    40→    'Zip-up': ['Full Zip', 'Half Zip'],
+    41→    41→  },
+    42→    42→}
+    43→    43→
+    44→    44→const bottomTypes: Record<string, Record<string, string[]>> = {
+    45→    45→  'Jeans': {
+    46→    46→    'Slim Fit': ['Dark Wash', 'Light Wash', 'Black'],
+    47→    47→    'Regular Fit': ['Straight Leg', 'Bootcut'],
+    48→    48→    'Skinny': ['High Rise', 'Mid Rise'],
+    49→    49→  },
+    50→    50→  'Trousers': {
+    51→    51→    'Formal': ['Pleated', 'Flat Front'],
+    52→    52→    'Casual': ['Chinos', 'Cargos', 'Corduroy'],
+    53→    53→  },
+    54→    54→  'Shorts': {
+    55→    55→    'Casual': ['Denim', 'Chino', 'Athletic'],
+    56→    56→    'Formal': ['Bermuda', 'Tailored'],
+    57→    57→  },
+    58→    58→  'Skirt': {
+    59→    59→    'Mini': ['A-Line', 'Pleated', 'Wrap'],
+    60→    60→    'Midi': ['A-Line', 'Pencil', 'Wrap'],
+    61→    61→    'Maxi': ['Flowy', 'Slit', 'Tiered'],
+    62→    62→  },
+    63→    63→  'Leggings': {
+    64→    64→    'Casual': ['Cotton', 'High Waist'],
+    65→    65→    'Athletic': ['Compression', 'Yoga'],
+    66→    66→  },
+    67→    67→  'Joggers': {
+    68→    68→    'Casual': ['Cotton', 'Fleece', 'Cuffed'],
+    69→    69→    'Athletic': ['Slim Fit', 'Tapered'],
+    70→    70→  },
+    71→    71→}
+    72→    72→
+    73→    73→const fullSuitTypes: Record<string, Record<string, string[]>> = {
+    74→    74→  'Saree': {
+    75→    75→    'Silk': ['Banarasi', 'Kanchipuram'],
+    76→    76→    'Cotton': ['Handloom', 'Printed'],
+    77→    77→    'Synthetic': ['Georgette', 'Chiffon', 'Crepe'],
+    78→    78→  },
+    79→    79→  'Dress': {
+    80→    80→    'Casual': ['T-Shirt', 'Wrap', 'Shift'],
+    81→    81→    'Formal': ['Cocktail', 'Evening Gown', 'Sheath'],
+    82→    82→    'Summer': ['Sundress', 'Maxi', 'Floral'],
+    83→    83→  },
+    84→    84→  'Jumpsuit': {
+    85→    85→    'Casual': ['Wide Leg', 'Slim Fit'],
+    86→    86→    'Formal': ['Black Tie', 'Structured'],
+    87→    87→  },
+    88→    88→  'Salwar Kameez': {
+    89→    89→    'Traditional': ['Anarkali', 'Straight Cut', 'A-Line'],
+    90→    90→    'Modern': ['Palazzo', 'Dhoti', 'Cape Style'],
+    91→    91→  },
+    92→    92→}
+    93→    93→
+    94→    94→// ─── Color palette ───
+    95→    95→const colorPalette = [
+    96→    96→  { key: 'black', label: 'Black', hex: '#1a1a1a' },
+    97→    97→  { key: 'white', label: 'White', hex: '#FFFFFF' },
+    98→    98→  { key: 'red', label: 'Red', hex: '#DC2626' },
+    99→    99→  { key: 'maroon', label: 'Maroon', hex: '#800000' },
+   100→   100→  { key: 'pink', label: 'Pink', hex: '#EC4899' },
+   101→   101→  { key: 'orange', label: 'Orange', hex: '#F97316' },
+   102→   102→  { key: 'yellow', label: 'Yellow', hex: '#EAB308' },
+   103→   103→  { key: 'beige', label: 'Beige', hex: '#D4A574' },
+   104→   104→  { key: 'cream', label: 'Cream', hex: '#FFFDD0' },
+   105→   105→  { key: 'green', label: 'Green', hex: '#22C55E' },
+   106→   106→  { key: 'olive', label: 'Olive', hex: '#808000' },
+   107→   107→  { key: 'teal', label: 'Teal', hex: '#14B8A6' },
+   108→   108→  { key: 'blue', label: 'Blue', hex: '#3B82F6' },
+   109→   109→  { key: 'navy', label: 'Navy', hex: '#1E3A5F' },
+   110→   110→  { key: 'purple', label: 'Purple', hex: '#8B5CF6' },
+   111→   111→  { key: 'brown', label: 'Brown', hex: '#92400E' },
+   112→   112→  { key: 'grey', label: 'Grey', hex: '#6B7280' },
+   113→   113→  { key: 'gold', label: 'Gold', hex: '#DAA520' },
+   114→   114→  { key: 'multi', label: 'Multi', hex: 'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f)' },
+   115→   115→]
+   116→   116→
+   117→   117→const seasonOccasionTags = ['Casual', 'Formal', 'Semi-Formal', 'Summer', 'Winter', 'All Season']
+   118→   118→
+   119→   119→export default function SaveOutfitView() {
+   120→   120→  const { setView, addClothingItem } = useStore()
+   121→   121→  const [step, setStep] = useState<SaveStep>('capture')
+   122→   122→  const [imageSrc, setImageSrc] = useState<string | null>(null)
+   123→   123→  const [topImageSrc, setTopImageSrc] = useState<string | null>(null)
+   124→   124→  const [bottomImageSrc, setBottomImageSrc] = useState<string | null>(null)
+   125→   125→  const [cutPosition, setCutPosition] = useState(50)
+   126→   126→  const [isDragging, setIsDragging] = useState(false)
+   127→   127→  const [mode, setMode] = useState<'split' | 'full'>('split')
+   128→   128→  const [isSaving, setIsSaving] = useState(false)
+   129→   129→
+   130→   130→  // Form fields — top
+   131→   131→  const [topType, setTopType] = useState('')
+   132→   132→  const [topDetail, setTopDetail] = useState('')
+   133→   133→  const [topTags, setTopTags] = useState<string[]>([])
+   134→   134→  const [topColor, setTopColor] = useState('')
+   135→   135→
+   136→   136→  // Form fields — bottom
+   137→   137→  const [bottomType, setBottomType] = useState('')
+   138→   138→  const [bottomDetail, setBottomDetail] = useState('')
+   139→   139→  const [bottomTags, setBottomTags] = useState<string[]>([])
+   140→   140→  const [bottomColor, setBottomColor] = useState('')
+   141→   141→
+   142→   142→  // Form fields — full suit
+   143→   143→  const [fullType, setFullType] = useState('')
+   144→   144→  const [fullDetail, setFullDetail] = useState('')
+   145→   145→  const [fullTags, setFullTags] = useState<string[]>([])
+   146→   146→  const [fullColor, setFullColor] = useState('')
+   147→   147→  const [outfitName, setOutfitName] = useState('')
+   148→   148→
+   149→   149→  const cameraInputRef = useRef<HTMLInputElement>(null)
+   150→   150→  const galleryInputRef = useRef<HTMLInputElement>(null)
+   151→   151→  const imageContainerRef = useRef<HTMLDivElement>(null)
+   152→   152→
+   153→   153→  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+   154→   154→    const file = e.target.files?.[0]
+   155→   155→    if (!file) return
+   156→   156→    const reader = new FileReader()
+   157→   157→    reader.onload = (ev) => {
+   158→   158→      setImageSrc(ev.target?.result as string)
+   159→   159→      setStep('cut')
+   160→   160→    }
+   161→   161→    reader.readAsDataURL(file)
+   162→   162→    e.target.value = ''
+   163→   163→  }, [])
+   164→   164→
+   165→   165→  const handleCutConfirm = useCallback(async () => {
+   166→   166→    if (!imageSrc) return
+   167→   167→    const img = new Image()
+   168→   168→    img.onload = async () => {
+   169→   169→      const cutY = Math.round((cutPosition / 100) * img.height)
+   170→   170→      const topCanvas = document.createElement('canvas')
+   171→   171→      topCanvas.width = img.width
+   172→   172→      topCanvas.height = cutY
+   173→   173→      const topCtx = topCanvas.getContext('2d')!
+   174→   174→      topCtx.drawImage(img, 0, 0, img.width, cutY, 0, 0, img.width, cutY)
+   175→   175→
+   176→   176→      const bottomCanvas = document.createElement('canvas')
+   177→   177→      bottomCanvas.width = img.width
+   178→   178→      bottomCanvas.height = img.height - cutY
+   179→   179→      const bottomCtx = bottomCanvas.getContext('2d')!
+   180→   180→      bottomCtx.drawImage(img, 0, cutY, img.width, img.height - cutY, 0, 0, img.width, img.height - cutY)
+   181→   181→
+   182→   182→      const [optimizedTop, optimizedBottom] = await Promise.all([
+   183→   183→        optimizeDataURL(topCanvas.toDataURL('image/png')),
+   184→   184→        optimizeDataURL(bottomCanvas.toDataURL('image/png')),
+   185→   185→      ])
+   186→   186→      setTopImageSrc(optimizedTop)
+   187→   187→      setBottomImageSrc(optimizedBottom)
+   188→   188→      setStep('save')
+   189→   189→    }
+   190→   190→    img.src = imageSrc
+   191→   191→  }, [imageSrc, cutPosition])
+   192→   192→
+   193→   193→  const handleDragMove = useCallback((clientY: number) => {
+   194→   194→    if (!imageContainerRef.current || !isDragging) return
+   195→   195→    const rect = imageContainerRef.current.getBoundingClientRect()
+   196→   196→    const y = clientY - rect.top
+   197→   197→    const pct = Math.max(10, Math.min(90, (y / rect.height) * 100))
+   198→   198→    setCutPosition(pct)
+   199→   199→  }, [isDragging])
+   200→   200→
+   201→   201→  const handleDragStart = useCallback(() => setIsDragging(true), [])
+   202→   202→  const handleDragEnd = useCallback(() => setIsDragging(false), [])
+   203→   203→
+   204→   204→  const resetAll = () => {
+   205→   205→    setStep('capture')
+   206→   206→    setImageSrc(null)
+   207→   207→    setTopImageSrc(null)
+   208→   208→    setBottomImageSrc(null)
+   209→   209→    setCutPosition(50)
+   210→   210→    setMode('split')
+   211→   211→    setTopType(''); setTopDetail(''); setTopTags([]); setTopColor('')
+   212→   212→    setBottomType(''); setBottomDetail(''); setBottomTags([]); setBottomColor('')
+   213→   213→    setFullType(''); setFullDetail(''); setFullTags([]); setFullColor('')
+   214→   214→    setOutfitName('')
+   215→   215→  }
+   216→   216→
+   217→   217→  const handleSaveFull = async () => {
+   218→   218→    if (!imageSrc) return
+   219→   219→    setIsSaving(true)
+   220→   220→    try {
+   221→   221→      const optimizedSrc = await optimizeDataURL(imageSrc)
+   222→   222→      const file = dataURLToFile(optimizedSrc, 'outfit.jpg')
+   223→   223→      const allTags = [fullDetail, ...fullTags].filter(Boolean)
+   224→   224→
+   225→   225→      const success = await addClothingItem({
+   226→   226→        category: 'FULL_SUIT',
+   227→   227→        subType: fullType || 'Full Outfit',
+   228→   228→        color: fullColor,
+   229→   229→        size: '',
+   230→   230→        tags: allTags,
+   231→   231→        isFavorite: false,
+   232→   232→        imageUrl: '',
+   233→   233→      }, file)
+   234→   234→
+   235→   235→      if (success) {
+   236→   236→        toast.success('Full outfit saved! 👗✨')
+   237→   237→        setView('home')
+   238→   238→      } else {
+   239→   239→        toast.error('Failed to save outfit')
+   240→   240→      }
+   241→   241→    } catch {
+   242→   242→      toast.error('Failed to save outfit')
+   243→   243→    }
+   244→   244→    setIsSaving(false)
+   245→   245→  }
+   246→   246→
+   247→   247→  const handleSaveSplit = async () => {
+   248→   248→    if (!topImageSrc || !bottomImageSrc) return
+   249→   249→    setIsSaving(true)
+   250→   250→    try {
+   251→   251→      const topFile = dataURLToFile(topImageSrc, 'top.jpg')
+   252→   252→      const topAllTags = [topDetail, ...topTags].filter(Boolean)
+   253→   253→
+   254→   254→      const topSuccess = await addClothingItem({
+   255→   255→        category: 'TOP',
+   256→   256→        subType: topType || 'Top',
+   257→   257→        color: topColor,
+   258→   258→        size: '',
+   259→   259→        tags: topAllTags,
+   260→   260→        isFavorite: false,
+   261→   261→        imageUrl: '',
+   262→   262→      }, topFile)
+   263→   263→
+   264→   264→      const bottomFile = dataURLToFile(bottomImageSrc, 'bottom.jpg')
+   265→   265→      const bottomAllTags = [bottomDetail, ...bottomTags].filter(Boolean)
+   266→   266→
+   267→   267→      const bottomSuccess = await addClothingItem({
+   268→   268→        category: 'BOTTOM',
+   269→   269→        subType: bottomType || 'Bottom',
+   270→   270→        color: bottomColor,
+   271→   271→        size: '',
+   272→   272→        tags: bottomAllTags,
+   273→   273→        isFavorite: false,
+   274→   274→        imageUrl: '',
+   275→   275→      }, bottomFile)
+   276→   276→
+   277→   277→      if (topSuccess && bottomSuccess) {
+   278→   278→        toast.success('Top & bottom saved! 👕👖✨')
+   279→   279→        setView('home')
+   280→   280→      } else {
+   281→   281→        toast.error('Failed to save some items')
+   282→   282→      }
+   283→   283→    } catch {
+   284→   284→      toast.error('Failed to save items')
+   285→   285→    }
+   286→   286→    setIsSaving(false)
+   287→   287→  }
+   288→   288→
+   289→   289→  // Helper: render cascading tag selector
+   290→   290→  const renderCascadingTags = (
+   291→   291→    typeTree: Record<string, Record<string, string[]>>,
+   292→   292→    selectedType: string,
+   293→   293→    setSelectedType: (v: string) => void,
+   294→   294→    selectedDetail: string,
+   295→   295→    setSelectedDetail: (v: string) => void,
+   296→   296→    selectedTags: string[],
+   297→   297→    toggleTag: (tag: string) => void,
+   298→   298→    accentColor: string = 'rose'
+   299→   299→  ) => {
+   300→   300→    const types = Object.keys(typeTree)
+   301→   301→    const details = selectedType ? Object.keys(typeTree[selectedType] || {}) : []
+   302→   302→    const tags = selectedType && selectedDetail ? (typeTree[selectedType][selectedDetail] || []) : []
+   303→   303→    const bgActive = accentColor === 'sky' ? 'bg-sky-500' : 'bg-rose-500'
+   304→   304→    const bgInactive = accentColor === 'sky' ? 'bg-sky-50 text-sky-700 hover:bg-sky-100' : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+   305→   305→
+   306→   306→    return (
+   307→   307→      <div className="space-y-3">
+   308→   308→        {/* Row 1: Type */}
+   309→   309→        <div>
+   310→   310→          <p className="text-xs font-semibold mb-1.5">Type</p>
+   311→   311→          <div className="flex flex-wrap gap-2">
+   312→   312→            {types.map((type) => (
+   313→   313→              <button
+   314→   314→                key={type}
+   315→   315→                onClick={() => { setSelectedType(type); setSelectedDetail(''); /* clear tags */ }}
+   316→   316→                className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   317→   317→                  selectedType === type ? `${bgActive} text-white shadow-sm` : bgInactive
+   318→   318→                }`}
+   319→   319→              >
+   320→   320→                {type}
+   321→   321→              </button>
+   322→   322→            ))}
+   323→   323→          </div>
+   324→   324→        </div>
+   325→   325→
+   326→   326→        {/* Row 2: Detail */}
+   327→   327→        {selectedType && details.length > 0 && (
+   328→   328→          <div>
+   329→   329→            <p className="text-xs font-semibold mb-1.5">{selectedType} Style</p>
+   330→   330→            <div className="flex flex-wrap gap-2">
+   331→   331→              {details.map((detail) => (
+   332→   332→                <button
+   333→   333→                  key={detail}
+   334→   334→                  onClick={() => setSelectedDetail(detail)}
+   335→   335→                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   336→   336→                    selectedDetail === detail ? `${bgActive} text-white shadow-sm` : bgInactive
+   337→   337→                  }`}
+   338→   338→                >
+   339→   339→                  {detail}
+   340→   340→                </button>
+   341→   341→              ))}
+   342→   342→            </div>
+   343→   343→          </div>
+   344→   344→        )}
+   345→   345→
+   346→   346→        {/* Row 3: Specific tags */}
+   347→   347→        {selectedDetail && tags.length > 0 && (
+   348→   348→          <div>
+   349→   349→            <p className="text-xs font-semibold mb-1.5">Details <span className="text-muted-foreground font-normal">(tap to select)</span></p>
+   350→   350→            <div className="flex flex-wrap gap-2">
+   351→   351→              {tags.map((tag) => (
+   352→   352→                <button
+   353→   353→                  key={tag}
+   354→   354→                  onClick={() => toggleTag(tag)}
+   355→   355→                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   356→   356→                    selectedTags.includes(tag) ? `${bgActive} text-white shadow-sm` : bgInactive
+   357→   357→                  }`}
+   358→   358→                >
+   359→   359→                  {tag}
+   360→   360→                </button>
+   361→   361→              ))}
+   362→   362→            </div>
+   363→   363→          </div>
+   364→   364→        )}
+   365→   365→
+   366→   366→        {/* Season / Occasion */}
+   367→   367→        {selectedType && (
+   368→   368→          <div>
+   369→   369→            <p className="text-xs font-semibold mb-1.5">Season & Occasion</p>
+   370→   370→            <div className="flex flex-wrap gap-2">
+   371→   371→              {seasonOccasionTags.map((tag) => (
+   372→   372→                <button
+   373→   373→                  key={tag}
+   374→   374→                  onClick={() => toggleTag(tag)}
+   375→   375→                  className={`px-4 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   376→   376→                    selectedTags.includes(tag) ? `${bgActive} text-white shadow-sm` : bgInactive
+   377→   377→                  }`}
+   378→   378→                >
+   379→   379→                  {tag}
+   380→   380→                </button>
+   381→   381→              ))}
+   382→   382→            </div>
+   383→   383→          </div>
+   384→   384→        )}
+   385→   385→      </div>
+   386→   386→    )
+   387→   387→  }
+   388→   388→
+   389→   389→  // Helper: render color picker
+   390→   390→  const renderColorPicker = (
+   391→   391→    selectedColor: string,
+   392→   392→    setSelectedColor: (v: string) => void
+   393→   393→  ) => (
+   394→   394→    <div>
+   395→   395→      <p className="text-xs font-semibold mb-2">Color</p>
+   396→   396→      <div className="flex flex-wrap gap-2.5">
+   397→   397→        {colorPalette.map(({ key, label, hex }) => (
+   398→   398→          <button
+   399→   399→            key={key}
+   400→   400→            onClick={() => setSelectedColor(selectedColor === key ? '' : key)}
+   401→   401→            className={`w-9 h-9 rounded-full border-2 transition-all relative ${
+   402→   402→              selectedColor === key
+   403→   403→                ? 'border-rose-500 scale-125 ring-2 ring-rose-200'
+   404→   404→                : 'border-gray-200 hover:border-rose-300 hover:scale-110'
+   405→   405→            }`}
+   406→   406→            style={key === 'multi'
+   407→   407→              ? { background: 'linear-gradient(135deg,#f00,#ff0,#0f0,#0ff,#00f)' }
+   408→   408→              : { backgroundColor: hex }
+   409→   409→            }
+   410→   410→            title={label}
+   411→   411→          >
+   412→   412→            {selectedColor === key && (
+   413→   413→              <Check className={`w-4 h-4 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 ${
+   414→   414→                ['white', 'cream', 'yellow', 'beige', 'lavender', 'silver'].includes(key) ? 'text-gray-700' : 'text-white'
+   415→   415→              }`} />
+   416→   416→            )}
+   417→   417→          </button>
+   418→   418→        ))}
+   419→   419→      </div>
+   420→   420→      {selectedColor && (
+   421→   421→        <p className="text-xs text-muted-foreground mt-1">Selected: {colorPalette.find(c => c.key === selectedColor)?.label}</p>
+   422→   422→      )}
+   423→   423→    </div>
+   424→   424→  )
+   425→   425→
+   426→   426→  return (
+   427→   427→    <div className="flex flex-col h-full">
+   428→   428→      {/* Header */}
+   429→   429→      <div className="px-4 pt-4 pb-2 flex items-center gap-3">
+   430→   430→        <button onClick={() => step === 'capture' ? setView('home') : resetAll()} className="text-rose-500 hover:text-rose-600">
+   431→   431→          <ArrowLeft className="w-5 h-5" />
+   432→   432→        </button>
+   433→   433→        <div className="flex-1">
+   434→   434→          <h1 className="text-xl font-bold text-rose-900">Save an Outfit</h1>
+   435→   435→          <p className="text-xs text-muted-foreground mt-0.5">
+   436→   436→            {step === 'capture' ? 'Take or upload a photo' : step === 'cut' ? 'Drag the cut line' : 'Add details & save'}
+   437→   437→          </p>
+   438→   438→        </div>
+   439→   439→        <div className="flex gap-1.5">
+   440→   440→          <div className={`w-6 h-1.5 rounded-full ${step === 'capture' ? 'bg-rose-500' : 'bg-rose-200'}`} />
+   441→   441→          <div className={`w-6 h-1.5 rounded-full ${step === 'cut' ? 'bg-rose-500' : 'bg-rose-200'}`} />
+   442→   442→          <div className={`w-6 h-1.5 rounded-full ${step === 'save' ? 'bg-rose-500' : 'bg-rose-200'}`} />
+   443→   443→        </div>
+   444→   444→      </div>
+   445→   445→
+   446→   446→      {/* Content */}
+   447→   447→      <div className="flex-1 overflow-y-auto custom-scrollbar">
+   448→   448→        <AnimatePresence mode="wait">
+   449→   449→          {step === 'capture' && (
+   450→   450→            <motion.div
+   451→   451→              key="capture"
+   452→   452→              initial={{ opacity: 0, x: -20 }}
+   453→   453→              animate={{ opacity: 1, x: 0 }}
+   454→   454→              exit={{ opacity: 0, x: 20 }}
+   455→   455→              className="px-4 py-8 flex flex-col items-center"
+   456→   456→            >
+   457→   457→              <div className="w-32 h-32 rounded-full bg-rose-50 flex items-center justify-center mb-6">
+   458→   458→                <Camera className="w-14 h-14 text-rose-300" />
+   459→   459→              </div>
+   460→   460→              <h2 className="text-lg font-semibold text-rose-900 mb-2">Snap Your Outfit</h2>
+   461→   461→              <p className="text-sm text-muted-foreground text-center mb-8 max-w-xs">
+   462→   462→                Take a full-body photo or upload from gallery. You can split it into top &amp; bottom later.
+   463→   463→              </p>
+   464→   464→
+   465→   465→              {/* Separate inputs for camera vs gallery */}
+   466→   466→              <input
+   467→   467→                ref={cameraInputRef}
+   468→   468→                type="file"
+   469→   469→                accept="image/*"
+   470→   470→                capture="environment"
+   471→   471→                className="hidden"
+   472→   472→                onChange={handleFileSelect}
+   473→   473→              />
+   474→   474→              <input
+   475→   475→                ref={galleryInputRef}
+   476→   476→                type="file"
+   477→   477→                accept="image/*"
+   478→   478→                className="hidden"
+   479→   479→                onChange={handleFileSelect}
+   480→   480→              />
+   481→   481→
+   482→   482→              <div className="flex flex-col gap-3 w-full max-w-xs">
+   483→   483→                <Button
+   484→   484→                  onClick={() => cameraInputRef.current?.click()}
+   485→   485→                  className="h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+   486→   486→                >
+   487→   487→                  <Camera className="w-5 h-5 mr-2" />
+   488→   488→                  Take Photo
+   489→   489→                </Button>
+   490→   490→                <Button
+   491→   491→                  variant="outline"
+   492→   492→                  onClick={() => galleryInputRef.current?.click()}
+   493→   493→                  className="h-12 rounded-xl border-rose-200 text-rose-700 font-semibold"
+   494→   494→                >
+   495→   495→                  <ImagePlus className="w-5 h-5 mr-2" />
+   496→   496→                  Upload from Gallery
+   497→   497→                </Button>
+   498→   498→              </div>
+   499→   499→            </motion.div>
+   500→   500→          )}
+   501→   501→
+   502→   502→          {step === 'cut' && imageSrc && (
+   503→   503→            <motion.div
+   504→   504→              key="cut"
+   505→   505→              initial={{ opacity: 0, x: 20 }}
+   506→   506→              animate={{ opacity: 1, x: 0 }}
+   507→   507→              exit={{ opacity: 0, x: -20 }}
+   508→   508→              className="px-4 py-4"
+   509→   509→            >
+   510→   510→              {/* Mode switcher */}
+   511→   511→              <div className="flex items-center justify-center gap-2 mb-4">
+   512→   512→                <button
+   513→   513→                  onClick={() => setMode('split')}
+   514→   514→                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+   515→   515→                    mode === 'split' ? 'bg-rose-500 text-white shadow-sm' : 'bg-rose-50 text-rose-700'
+   516→   516→                  }`}
+   517→   517→                >
+   518→   518→                  <Scissors className="inline w-4 h-4 mr-1" />
+   519→   519→                  Split Top &amp; Bottom
+   520→   520→                </button>
+   521→   521→                <button
+   522→   522→                  onClick={() => setMode('full')}
+   523→   523→                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+   524→   524→                    mode === 'full' ? 'bg-rose-500 text-white shadow-sm' : 'bg-rose-50 text-rose-700'
+   525→   525→                  }`}
+   526→   526→                >
+   527→   527→                  <Shirt className="inline w-4 h-4 mr-1" />
+   528→   528→                  Save as Full Suit
+   529→   529→                </button>
+   530→   530→              </div>
+   531→   531→
+   532→   532→              {/* Image with cut line */}
+   533→   533→              <div
+   534→   534→                ref={imageContainerRef}
+   535→   535→                className="relative w-full aspect-[3/4] rounded-2xl overflow-hidden border-2 border-rose-200 bg-rose-50 select-none touch-none"
+   536→   536→                onMouseMove={(e) => handleDragMove(e.clientY)}
+   537→   537→                onMouseUp={handleDragEnd}
+   538→   538→                onMouseLeave={handleDragEnd}
+   539→   539→                onTouchMove={(e) => handleDragMove(e.touches[0].clientY)}
+   540→   540→                onTouchEnd={handleDragEnd}
+   541→   541→              >
+   542→   542→                <img src={imageSrc} alt="Your outfit" className="w-full h-full object-cover" draggable={false} />
+   543→   543→                {mode === 'split' && (
+   544→   544→                  <>
+   545→   545→                    <div className="absolute top-0 left-0 right-0 bg-rose-500/10 pointer-events-none transition-all" style={{ height: `${cutPosition}%` }} />
+   546→   546→                    <div className="absolute bottom-0 left-0 right-0 bg-sky-500/10 pointer-events-none transition-all" style={{ height: `${100 - cutPosition}%` }} />
+   547→   547→                    <div className="absolute top-3 left-3 px-2 py-1 bg-rose-500 text-white text-[10px] font-bold rounded-lg">👕 TOP</div>
+   548→   548→                    <div className="absolute bottom-3 left-3 px-2 py-1 bg-sky-500 text-white text-[10px] font-bold rounded-lg">👖 BOTTOM</div>
+   549→   549→                    <div
+   550→   550→                      className="absolute left-0 right-0 flex items-center justify-center cursor-row-resize z-10"
+   551→   551→                      style={{ top: `${cutPosition}%`, transform: 'translateY(-50%)' }}
+   552→   552→                      onMouseDown={handleDragStart}
+   553→   553→                      onTouchStart={handleDragStart}
+   554→   554→                    >
+   555→   555→                      <div className="w-full h-1 bg-rose-500 shadow-lg" />
+   556→   556→                      <div className="absolute w-10 h-10 rounded-full bg-rose-500 border-4 border-white shadow-lg flex items-center justify-center">
+   557→   557→                        <Scissors className="w-4 h-4 text-white" />
+   558→   558→                      </div>
+   559→   559→                    </div>
+   560→   560→                  </>
+   561→   561→                )}
+   562→   562→              </div>
+   563→   563→              {mode === 'split' && (
+   564→   564→                <p className="text-xs text-center text-muted-foreground mt-3">↔ Drag the scissors line up or down to set the split point</p>
+   565→   565→              )}
+   566→   566→            </motion.div>
+   567→   567→          )}
+   568→   568→
+   569→   569→          {step === 'save' && (
+   570→   570→            <motion.div
+   571→   571→              key="save"
+   572→   572→              initial={{ opacity: 0, x: 20 }}
+   573→   573→              animate={{ opacity: 1, x: 0 }}
+   574→   574→              exit={{ opacity: 0, x: -20 }}
+   575→   575→              className="px-4 py-4 space-y-4"
+   576→   576→            >
+   577→   577→              {/* Preview */}
+   578→   578→              <div className="flex gap-3">
+   579→   579→                {mode === 'split' ? (
+   580→   580→                  <>
+   581→   581→                    <div className="flex-1 rounded-xl overflow-hidden border border-rose-200 aspect-[3/4]">
+   582→   582→                      {topImageSrc && <img src={topImageSrc} alt="Top" className="w-full h-full object-cover" />}
+   583→   583→                    </div>
+   584→   584→                    <div className="flex-1 rounded-xl overflow-hidden border border-sky-200 aspect-[3/4]">
+   585→   585→                      {bottomImageSrc && <img src={bottomImageSrc} alt="Bottom" className="w-full h-full object-cover" />}
+   586→   586→                    </div>
+   587→   587→                  </>
+   588→   588→                ) : (
+   589→   589→                  <div className="flex-1 rounded-xl overflow-hidden border border-rose-200 aspect-[3/4] max-w-[200px] mx-auto">
+   590→   590→                    {imageSrc && <img src={imageSrc} alt="Full outfit" className="w-full h-full object-cover" />}
+   591→   591→                  </div>
+   592→   592→                )}
+   593→   593→              </div>
+   594→   594→
+   595→   595→              {/* Outfit name */}
+   596→   596→              <div>
+   597→   597→                <p className="text-xs font-medium text-rose-700 mb-1">Outfit Name</p>
+   598→   598→                <input
+   599→   599→                  type="text"
+   600→   600→                  placeholder="e.g., Office Monday"
+   601→   601→                  value={outfitName}
+   602→   602→                  onChange={(e) => setOutfitName(e.target.value)}
+   603→   603→                  className="w-full h-11 px-3 rounded-xl border border-rose-200 text-sm focus:border-rose-400 focus:outline-none"
+   604→   604→                />
+   605→   605→              </div>
+   606→   606→
+   607→   607→              {mode === 'split' ? (
+   608→   608→                <div className="space-y-4">
+   609→   609→                  {/* ─── TOP section ─── */}
+   610→   610→                  <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50 space-y-3">
+   611→   611→                    <p className="text-sm font-semibold text-rose-700">👕 Top</p>
+   612→   612→                    {renderCascadingTags(topTypes, topType, setTopType, topDetail, setTopDetail, topTags, (tag) => setTopTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'rose')}
+   613→   613→                    {renderColorPicker(topColor, setTopColor)}
+   614→   614→                  </div>
+   615→   615→
+   616→   616→                  {/* ─── BOTTOM section ─── */}
+   617→   617→                  <div className="p-3 rounded-xl border border-sky-200 bg-sky-50/50 space-y-3">
+   618→   618→                    <p className="text-sm font-semibold text-sky-700">👖 Bottom</p>
+   619→   619→                    {renderCascadingTags(bottomTypes, bottomType, setBottomType, bottomDetail, setBottomDetail, bottomTags, (tag) => setBottomTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'sky')}
+   620→   620→                    {renderColorPicker(bottomColor, setBottomColor)}
+   621→   621→                  </div>
+   622→   622→                </div>
+   623→   623→              ) : (
+   624→   624→                <div className="p-3 rounded-xl border border-rose-200 bg-rose-50/50 space-y-3">
+   625→   625→                  <p className="text-sm font-semibold text-rose-700">👗 Full Suit</p>
+   626→   626→                  {renderCascadingTags(fullSuitTypes, fullType, setFullType, fullDetail, setFullDetail, fullTags, (tag) => setFullTags(prev => prev.includes(tag) ? prev.filter(t => t !== tag) : [...prev, tag]), 'rose')}
+   627→   627→                  {renderColorPicker(fullColor, setFullColor)}
+   628→   628→                </div>
+   629→   629→              )}
+   630→   630→            </motion.div>
+   631→   631→          )}
+   632→   632→        </AnimatePresence>
+   633→   633→      </div>
+   634→   634→
+   635→   635→      {/* Bottom actions */}
+   636→   636→      <div className="px-4 py-3 border-t border-rose-100 bg-white/80 backdrop-blur-sm">
+   637→   637→        {step === 'cut' && (
+   638→   638→          <div className="flex gap-3">
+   639→   639→            <Button
+   640→   640→              variant="outline"
+   641→   641→              onClick={resetAll}
+   642→   642→              className="flex-1 h-12 rounded-xl border-rose-200 text-rose-700"
+   643→   643→            >
+   644→   644→              <RotateCcw className="w-4 h-4 mr-1" />
+   645→   645→              Retake
+   646→   646→            </Button>
+   647→   647→            <Button
+   648→   648→              onClick={mode === 'full' ? () => setStep('save') : handleCutConfirm}
+   649→   649→              className="flex-[2] h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+   650→   650→            >
+   651→   651→              <Check className="w-4 h-4 mr-1" />
+   652→   652→              {mode === 'full' ? 'Continue' : 'Confirm Cut'}
+   653→   653→            </Button>
+   654→   654→          </div>
+   655→   655→        )}
+   656→   656→        {step === 'save' && (
+   657→   657→          <Button
+   658→   658→            onClick={mode === 'split' ? handleSaveSplit : handleSaveFull}
+   659→   659→            disabled={isSaving}
+   660→   660→            className="w-full h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+   661→   661→          >
+   662→   662→            {isSaving ? 'Saving...' : 'Save to Wardrobe ✨'}
+   663→   663→          </Button>
+   664→   664→        )}
+   665→   665→      </div>
+   666→   666→    </div>
+   667→   667→  )
+   668→   668→}
+   669→   669→

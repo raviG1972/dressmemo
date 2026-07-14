@@ -117,3 +117,33 @@ export function dataURLToFile(dataURL: string, filename: string = 'photo.jpg'): 
   }
   return new File([bytes], filename, { type: mime })
 }
+
+/**
+ * Crop a rectangular region from a data URL image.
+ * rect: { x, y, w, h } in percentages (0-100) of the image dimensions.
+ * Returns an optimized JPEG data URL of the cropped region.
+ */
+export async function cropImageRegion(
+  dataURL: string,
+  rect: { x: number; y: number; w: number; h: number }
+): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.onload = () => {
+      const sx = Math.round((rect.x / 100) * img.width)
+      const sy = Math.round((rect.y / 100) * img.height)
+      const sw = Math.round((rect.w / 100) * img.width)
+      const sh = Math.round((rect.h / 100) * img.height)
+
+      const canvas = document.createElement('canvas')
+      canvas.width = Math.max(1, sw)
+      canvas.height = Math.max(1, sh)
+      const ctx = canvas.getContext('2d')!
+      ctx.drawImage(img, sx, sy, sw, sh, 0, 0, sw, sh)
+
+      const cropped = canvas.toDataURL('image/jpeg', JPEG_QUALITY)
+      resolve(cropped)
+    }
+    img.src = dataURL
+  })
+}
