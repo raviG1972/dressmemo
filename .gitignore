@@ -64,4 +64,5 @@ upload/
 agent-ctx/
 
 # Mini services
-mini-services/*/node_modules
+mini-services/*/node_modulestool-results/
+login-page.png
