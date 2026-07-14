@@ -342,7 +342,10 @@ export const useStore = create<AppState>((set, get) => ({
       })
       const data = await res.json()
       if (res.ok && data.user) {
-        set({ user: data.user, isAuthenticated: true, currentView: 'home', isLoading: false })
+        set({ user: data.user, isAuthenticated: true, isLoading: false })
+        // Defer view change so browser processes Set-Cookie before next fetch
+        await new Promise((r) => setTimeout(r, 100))
+        set({ currentView: 'home' })
         return true
       }
       set({ isLoading: false })
@@ -363,7 +366,10 @@ export const useStore = create<AppState>((set, get) => ({
       })
       const data = await res.json()
       if (res.ok && data.user) {
-        set({ user: data.user, isAuthenticated: true, currentView: 'home', isLoading: false })
+        set({ user: data.user, isAuthenticated: true, isLoading: false })
+        // Defer view change so browser processes Set-Cookie before next fetch
+        await new Promise((r) => setTimeout(r, 100))
+        set({ currentView: 'home' })
         return true
       }
       set({ isLoading: false })
@@ -380,7 +386,9 @@ export const useStore = create<AppState>((set, get) => ({
       if (res.ok) {
         const data = await res.json()
         if (data.user) {
-          set({ user: data.user, isAuthenticated: true, currentView: 'home' })
+          set({ user: data.user, isAuthenticated: true })
+          await new Promise((r) => setTimeout(r, 100))
+          set({ currentView: 'home' })
           return
         }
       }
