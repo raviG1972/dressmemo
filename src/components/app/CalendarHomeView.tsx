@@ -1,12 +1,14 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isToday, isFuture, isPast } from 'date-fns'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isToday, isFuture, isPast, isSameDay } from 'date-fns'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Plus, User, AlertCircle } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, User, AlertCircle, Calendar } from 'lucide-react'
 import { useStore, getDateKey } from '@/lib/store'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
 export default function CalendarHomeView() {
   const { user, outfits, unprocessedCount, setView, setSelectedDate, fetchOutfitsByMonth } = useStore()
@@ -30,26 +32,33 @@ export default function CalendarHomeView() {
     return [...prefixDays, ...daysInMonth]
   }, [currentMonth])
 
-  const handlePrevMonth = () => setCurrentMonth(subMonths(currentMonth, 1))
-  const handleNextMonth = () => setCurrentMonth(addMonths(currentMonth, 1))
+  const handlePrevMonth = useCallback(() => setCurrentMonth(subMonths(currentMonth, 1)), [currentMonth])
+  const handleNextMonth = useCallback(() => setCurrentMonth(addMonths(currentMonth, 1)), [currentMonth])
 
-  const handleDayClick = (date: Date) => {
+  const handleDayClick = useCallback((date: Date) => {
     setSelectedDate(date)
     setView('day-gallery')
-  }
+  }, [setSelectedDate, setView])
 
-  const handleAddOutfit = (date: Date) => {
+  const handlePlanOutfit = useCallback((date: Date, e: React.MouseEvent) => {
+    e.stopPropagation()
     setSelectedDate(date)
     setView('save-outfit')
-  }
+  }, [setSelectedDate, setView])
+
+  const today = new Date()
 
   return (
     <div className="flex flex-col min-h-full">
       {/* Header */}
       <div className="px-4 pt-4 pb-2 bg-gradient-to-b from-rose-50/80 to-transparent">
         <div className="flex items-center justify-between mb-2">
-          <div>
-            <h1 className="text-xl font-bold text-rose-900">Hey, {firstName}! 👋</h1>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-6 h-6 text-rose-500" />
+            <div>
+              <h1 className="text-xl font-bold text-rose-900">Hey, {firstName}! 👋</h1>
+              <p className="text-[11px] text-rose-400 font-medium">What are you wearing today?</p>
+            </div>
           </div>
           <button
             onClick={() => setView('profile')}
@@ -59,15 +68,17 @@ export default function CalendarHomeView() {
           </button>
         </div>
 
-        {/* Unprocessed outfits banner */}
+        {/* Unprocessed outfits banner - subtle, not a prompt */}
         {unprocessedCount > 0 && (
-          <button
+          <motion.button
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
             onClick={() => setView('process-outfit')}
-            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm font-medium mb-2 hover:bg-amber-100 transition-colors active:scale-[0.98]"
+            className="w-full flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50/80 border border-amber-200/60 text-amber-700 text-xs font-medium mb-1 hover:bg-amber-100/80 transition-colors active:scale-[0.98]"
           >
-            <AlertCircle className="w-4 h-4 text-amber-500 shrink-0" />
+            <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0" />
             <span>You have {unprocessedCount} unprocessed outfit{unprocessedCount > 1 ? 's' : ''} — add them to wardrobe now.</span>
-          </button>
+          </motion.button>
         )}
       </div>
 
@@ -80,7 +91,7 @@ export default function CalendarHomeView() {
           <ChevronLeft className="w-5 h-5" />
         </button>
         <h2 className="text-lg font-bold text-rose-900">
-          {format(currentMonth, 'MMMM yyyy')}
+          {MONTHS[month]} {year}
         </h2>
         <button
           onClick={handleNextMonth}
@@ -99,8 +110,8 @@ export default function CalendarHomeView() {
         ))}
       </div>
 
-      {/* Calendar grid */}
-      <div className="grid grid-cols-7 gap-[2px] px-2 pb-4">
+      {/* Calendar grid - prominent and full-width */}
+      <div className="grid grid-cols-7 gap-[3px] px-2 pb-4">
         {calendarDays.map((day, idx) => {
           if (!day) {
             return <div key={`empty-${idx}`} className="aspect-square" />
@@ -110,65 +121,133 @@ export default function CalendarHomeView() {
           const dayOutfits = outfits[dateKey] || []
           const firstOutfit = dayOutfits[0]
           const hasOutfits = dayOutfits.length > 0
-          const today = isToday(day)
-          const future = isFuture(day)
-          const past = isPast(day) && !today
+          const isTodayDate = isToday(day)
+          const isFutureDate = isFuture(day) && !isTodayDate
+          const isPastDate = isPast(day) && !isTodayDate
 
+          // Future dates with no outfits: show big plus button to plan
+          if (isFutureDate && !hasOutfits) {
+            return (
+              <motion.button
+                key={dateKey}
+                onClick={() => handlePlanOutfit(day, {} as React.MouseEvent)}
+                className="relative aspect-square rounded-lg overflow-hidden bg-rose-50/50 border border-rose-100/60 hover:bg-rose-100/60 hover:border-rose-200 transition-all active:scale-95"
+                whileTap={{ scale: 0.93 }}
+                whileHover={{ scale: 1.02 }}
+              >
+                {/* Date number in top-right corner */}
+                <span className="absolute top-0.5 right-1 text-[10px] font-bold text-rose-300 z-10">
+                  {format(day, 'd')}
+                </span>
+
+                {/* Big plus button for planning */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+                  <div className="w-8 h-8 rounded-full bg-rose-100/80 flex items-center justify-center">
+                    <Plus className="w-5 h-5 text-rose-400" />
+                  </div>
+                  <span className="text-[8px] text-rose-300 font-medium">Plan</span>
+                </div>
+              </motion.button>
+            )
+          }
+
+          // Today with no outfits: show plus button styled differently
+          if (isTodayDate && !hasOutfits) {
+            return (
+              <motion.button
+                key={dateKey}
+                onClick={() => handlePlanOutfit(day, {} as React.MouseEvent)}
+                className="relative aspect-square rounded-lg overflow-hidden bg-rose-100/60 border-2 border-rose-400 hover:bg-rose-100 transition-all active:scale-95"
+                whileTap={{ scale: 0.93 }}
+              >
+                {/* Date number in top-right corner */}
+                <span className="absolute top-0.5 right-1 text-[10px] font-bold text-rose-500 z-10">
+                  {format(day, 'd')}
+                </span>
+
+                {/* Today's plus button */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-0.5">
+                  <div className="w-9 h-9 rounded-full bg-rose-500/20 flex items-center justify-center">
+                    <Plus className="w-6 h-6 text-rose-500" />
+                  </div>
+                  <span className="text-[8px] text-rose-500 font-semibold">Today</span>
+                </div>
+              </motion.button>
+            )
+          }
+
+          // Days with outfits: show thumbnail
           return (
             <motion.button
               key={dateKey}
               onClick={() => handleDayClick(day)}
               className={`relative aspect-square rounded-lg overflow-hidden transition-all active:scale-95 ${
-                today
+                isTodayDate
                   ? 'ring-2 ring-rose-500 ring-offset-1'
-                  : 'hover:bg-rose-50/50'
-              } ${hasOutfits ? 'bg-white border border-rose-100 shadow-sm' : 'bg-rose-50/30 border border-transparent'}`}
+                  : ''
+              } ${hasOutfits ? 'bg-white border border-rose-100 shadow-sm hover:shadow-md' : 'bg-rose-50/30 border border-transparent hover:bg-rose-50/50'}`}
               whileTap={{ scale: 0.95 }}
             >
               {/* Date number in top-right corner */}
-              <span className={`absolute top-0.5 right-1 text-[10px] font-bold z-10 ${
-                today ? 'text-rose-600' : hasOutfits ? 'text-rose-800' : 'text-rose-300'
+              <span className={`absolute top-0.5 right-1 text-[10px] font-bold z-10 drop-shadow-sm ${
+                isTodayDate ? 'text-rose-600' : hasOutfits ? 'text-white' : 'text-rose-300'
               }`}>
                 {format(day, 'd')}
               </span>
 
-              {/* Outfit thumbnail */}
+              {/* Outfit thumbnail - fills the whole square */}
               {firstOutfit?.imageUrl && (
                 <img
                   src={firstOutfit.imageUrl}
                   alt={`Outfit for ${dateKey}`}
                   className="absolute inset-0 w-full h-full object-cover"
+                  loading="lazy"
                 />
               )}
 
-              {/* Overlay for multiple outfits indicator */}
+              {/* Semi-transparent overlay at bottom for text readability */}
+              {hasOutfits && (
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/50 to-transparent h-1/3" />
+              )}
+
+              {/* Multiple outfits indicator badge */}
               {hasOutfits && dayOutfits.length > 1 && (
-                <span className="absolute top-0.5 left-0.5 bg-rose-500 text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center z-10">
+                <span className="absolute top-0.5 left-0.5 bg-rose-500 text-white text-[8px] font-bold rounded-full w-4 h-4 flex items-center justify-center z-10 shadow-sm">
                   {dayOutfits.length}
                 </span>
               )}
 
-              {/* Reason tag indicator */}
+              {/* Reason tag indicator at bottom */}
               {firstOutfit?.reasonTag && (
-                <span className="absolute bottom-0 left-0 right-0 bg-black/50 text-white text-[7px] font-medium px-0.5 py-[1px] text-center truncate z-10">
+                <span className="absolute bottom-0.5 left-0.5 right-0.5 text-white text-[7px] font-medium px-1 py-[1px] text-center truncate z-10">
                   {firstOutfit.reasonTag}
                 </span>
               )}
 
-              {/* Plus icon for future dates or empty past dates */}
-              {!hasOutfits && (
+              {/* Empty past dates: small plus */}
+              {!hasOutfits && isPastDate && (
                 <div className="absolute inset-0 flex items-center justify-center">
-                  <Plus className={`w-5 h-5 ${future ? 'text-rose-400' : 'text-rose-200'}`} />
+                  <Plus className="w-4 h-4 text-rose-200" />
                 </div>
-              )}
-
-              {/* Today indicator dot */}
-              {today && !hasOutfits && (
-                <span className="absolute bottom-1 left-1/2 -translate-x-1/2 w-1.5 h-1.5 bg-rose-500 rounded-full z-10" />
               )}
             </motion.button>
           )
         })}
+      </div>
+
+      {/* Quick add today's outfit button at bottom */}
+      <div className="px-4 pb-4">
+        <motion.button
+          whileTap={{ scale: 0.97 }}
+          onClick={() => {
+            setSelectedDate(new Date())
+            setView('save-outfit')
+          }}
+          className="w-full h-12 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold flex items-center justify-center gap-2 shadow-md shadow-rose-200/50 transition-colors"
+        >
+          <Plus className="w-5 h-5" />
+          Add Today&apos;s Outfit
+        </motion.button>
       </div>
     </div>
   )

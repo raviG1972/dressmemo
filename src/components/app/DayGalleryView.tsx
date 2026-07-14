@@ -1,9 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { format } from 'date-fns'
+import { format, isFuture, isToday } from 'date-fns'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ArrowLeft, Plus, Clock, Tag, Trash2, Edit3, Check, X } from 'lucide-react'
+import { ArrowLeft, Plus, Clock, Tag, Trash2, Edit3, Check, X, Calendar, Shirt, Scissors } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useStore, getDateKey, type Outfit } from '@/lib/store'
 import { toast } from 'sonner'
@@ -30,12 +30,8 @@ export default function DayGalleryView() {
     fetchOutfitsByDate(dateKey)
   }, [dateKey, fetchOutfitsByDate])
 
-  const isToday = (() => {
-    const now = new Date()
-    return format(now, 'yyyy-MM-dd') === dateKey
-  })()
-
-  const isFuture = selectedDate > new Date()
+  const isTodayDate = isToday(selectedDate)
+  const isFutureDate = isFuture(selectedDate)
 
   const handleAddOutfit = () => {
     setView('save-outfit')
@@ -69,8 +65,6 @@ export default function DayGalleryView() {
         }),
       })
       if (res.ok) {
-        const updated = await res.json()
-        // Update local state
         const { outfits } = useStore.getState()
         const dayOutfits = outfits[dateKey] || []
         useStore.setState({
@@ -97,6 +91,11 @@ export default function DayGalleryView() {
     }
   }
 
+  const handleProcessOutfit = (outfit: Outfit) => {
+    // Navigate to process outfit view
+    setView('process-outfit')
+  }
+
   return (
     <div className="flex flex-col min-h-full">
       {/* Header */}
@@ -109,9 +108,14 @@ export default function DayGalleryView() {
             {format(selectedDate, 'EEEE, MMMM d')}
           </h1>
           <p className="text-xs text-muted-foreground">
-            {isFuture ? 'Plan your outfit' : isToday ? "Today's outfits" : 'What you wore'}
+            {isFutureDate ? '🗓️ Plan your outfit' : isTodayDate ? "📸 Today's outfits" : '👔 What you wore'}
           </p>
         </div>
+        {dayOutfits.length > 0 && (
+          <span className="text-xs font-medium text-rose-500 bg-rose-50 px-2 py-1 rounded-full">
+            {dayOutfits.length} outfit{dayOutfits.length !== 1 ? 's' : ''}
+          </span>
+        )}
       </div>
 
       {/* Gallery */}
@@ -119,29 +123,46 @@ export default function DayGalleryView() {
         {dayOutfits.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-16 text-center">
             <div className="w-24 h-24 rounded-full bg-rose-50 flex items-center justify-center mb-4">
-              <Plus className="w-10 h-10 text-rose-300" />
+              {isFutureDate ? (
+                <Calendar className="w-10 h-10 text-rose-300" />
+              ) : (
+                <Shirt className="w-10 h-10 text-rose-300" />
+              )}
             </div>
-            <p className="text-sm text-muted-foreground mb-4">
-              {isFuture ? 'Plan an outfit for this day' : 'No outfits recorded for this day'}
+            <h2 className="text-base font-semibold text-rose-800 mb-1">
+              {isFutureDate ? 'Plan Your Outfit' : 'No Outfits Recorded'}
+            </h2>
+            <p className="text-sm text-muted-foreground mb-6 max-w-xs">
+              {isFutureDate
+                ? 'Decide what to wear on this day. Add your outfit now!'
+                : isTodayDate
+                ? "You haven't logged today's outfit yet. Add it now!"
+                : "You didn't log any outfit for this day."}
             </p>
             <Button
               onClick={handleAddOutfit}
-              className="rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold"
+              className="rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-semibold h-12 px-6"
             >
-              <Plus className="w-4 h-4 mr-1" />
-              Add Outfit
+              <Plus className="w-5 h-5 mr-2" />
+              {isFutureDate ? 'Plan Outfit' : 'Add Outfit'}
             </Button>
           </div>
         ) : (
           <div className="grid grid-cols-2 gap-3">
-            {/* Add outfit card */}
-            <button
+            {/* Add outfit card - first position */}
+            <motion.button
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
               onClick={handleAddOutfit}
               className="aspect-[3/4] rounded-xl border-2 border-dashed border-rose-200 bg-rose-50/50 flex flex-col items-center justify-center gap-2 hover:border-rose-400 hover:bg-rose-50 transition-colors active:scale-95"
             >
-              <Plus className="w-8 h-8 text-rose-300" />
-              <span className="text-xs text-rose-400 font-medium">Add Outfit</span>
-            </button>
+              <div className="w-10 h-10 rounded-full bg-rose-100 flex items-center justify-center">
+                <Plus className="w-6 h-6 text-rose-400" />
+              </div>
+              <span className="text-xs text-rose-400 font-medium">
+                {isFutureDate ? 'Plan More' : 'Add More'}
+              </span>
+            </motion.button>
 
             {/* Outfit cards */}
             {dayOutfits.map((outfit, idx) => (
@@ -158,11 +179,12 @@ export default function DayGalleryView() {
                     src={outfit.imageUrl}
                     alt={`Outfit ${idx + 1}`}
                     className="w-full h-full object-cover"
+                    loading="lazy"
                   />
                 )}
 
-                {/* Overlay info */}
-                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent p-2 pt-8">
+                {/* Bottom gradient overlay for info */}
+                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2.5 pt-10">
                   {/* Time */}
                   {outfit.time && (
                     <div className="flex items-center gap-1 mb-0.5">
@@ -179,22 +201,39 @@ export default function DayGalleryView() {
                     </div>
                   )}
 
-                  {/* Caption */}
+                  {/* Custom reason text */}
+                  {outfit.reasonText && (
+                    <p className="text-[10px] text-white/70 line-clamp-1">{outfit.reasonText}</p>
+                  )}
+
+                  {/* Caption beneath photo */}
                   {outfit.caption && (
-                    <p className="text-[10px] text-white/80 line-clamp-2">{outfit.caption}</p>
+                    <p className="text-[11px] text-white/90 font-medium line-clamp-2 mt-0.5">{outfit.caption}</p>
                   )}
 
                   {/* No info - show placeholder */}
-                  {!outfit.time && !outfit.reasonTag && !outfit.caption && (
-                    <p className="text-[10px] text-white/50 italic">Tap to add details</p>
+                  {!outfit.time && !outfit.reasonTag && !outfit.caption && !outfit.reasonText && (
+                    <p className="text-[10px] text-white/50 italic">Tap edit to add details</p>
                   )}
                 </div>
 
                 {/* Processed indicator */}
                 {outfit.processed && (
-                  <span className="absolute top-1.5 right-1.5 bg-emerald-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full">
-                    ✓ In Wardrobe
+                  <span className="absolute top-1.5 right-1.5 bg-emerald-500 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full flex items-center gap-0.5">
+                    <Shirt className="w-2.5 h-2.5" />
+                    Wardrobe
                   </span>
+                )}
+
+                {/* Not processed - add to wardrobe button */}
+                {!outfit.processed && (
+                  <button
+                    onClick={() => handleProcessOutfit(outfit)}
+                    className="absolute top-1.5 right-1.5 bg-amber-500/90 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full hover:bg-amber-600 transition-colors flex items-center gap-0.5"
+                  >
+                    <Scissors className="w-2.5 h-2.5" />
+                    Crop
+                  </button>
                 )}
 
                 {/* Action buttons on hover/long-press */}
