@@ -3,8 +3,9 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { format, startOfMonth, endOfMonth, eachDayOfInterval, getDay, addMonths, subMonths, isToday, isFuture, isPast, isSameDay } from 'date-fns'
 import { motion, AnimatePresence } from 'framer-motion'
-import { ChevronLeft, ChevronRight, Plus, User, AlertCircle, Calendar } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Plus, User, AlertCircle, Calendar, Download } from 'lucide-react'
 import { useStore, getDateKey } from '@/lib/store'
+import { usePWAInstall } from '@/hooks/usePWAInstall'
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
@@ -12,6 +13,7 @@ const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 
 
 export default function CalendarHomeView() {
   const { user, outfits, unprocessedCount, setView, setSelectedDate, fetchOutfitsByMonth } = useStore()
+  const { isInstallable, install } = usePWAInstall()
   const [currentMonth, setCurrentMonth] = useState(new Date())
 
   const year = currentMonth.getFullYear()
@@ -67,6 +69,19 @@ export default function CalendarHomeView() {
             <User className="w-4 h-4" />
           </button>
         </div>
+
+        {/* Install app banner */}
+        {isInstallable && (
+          <motion.button
+            initial={{ opacity: 0, y: -5 }}
+            animate={{ opacity: 1, y: 0 }}
+            onClick={install}
+            className="w-full flex items-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-rose-500 to-pink-500 text-white text-xs font-semibold mb-1 hover:from-rose-600 hover:to-pink-600 transition-all active:scale-[0.98] shadow-sm"
+          >
+            <Download className="w-4 h-4 shrink-0" />
+            <span>Install DressMemo on your phone</span>
+          </motion.button>
+        )}
 
         {/* Unprocessed outfits banner - subtle, not a prompt */}
         {unprocessedCount > 0 && (
