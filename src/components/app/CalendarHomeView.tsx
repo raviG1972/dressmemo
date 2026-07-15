@@ -40,8 +40,8 @@ export default function CalendarHomeView() {
     setView('day-gallery')
   }, [setSelectedDate, setView])
 
-  const handlePlanOutfit = useCallback((date: Date, e: React.MouseEvent) => {
-    e.stopPropagation()
+  const handlePlanOutfit = useCallback((date: Date, e?: React.MouseEvent) => {
+    e?.stopPropagation()
     setSelectedDate(date)
     setView('save-outfit')
   }, [setSelectedDate, setView])
@@ -130,7 +130,7 @@ export default function CalendarHomeView() {
             return (
               <motion.button
                 key={dateKey}
-                onClick={() => handlePlanOutfit(day, {} as React.MouseEvent)}
+                onClick={() => handlePlanOutfit(day)}
                 className="relative aspect-square rounded-lg overflow-hidden bg-rose-50/50 border border-rose-100/60 hover:bg-rose-100/60 hover:border-rose-200 transition-all active:scale-95"
                 whileTap={{ scale: 0.93 }}
                 whileHover={{ scale: 1.02 }}
@@ -156,7 +156,7 @@ export default function CalendarHomeView() {
             return (
               <motion.button
                 key={dateKey}
-                onClick={() => handlePlanOutfit(day, {} as React.MouseEvent)}
+                onClick={() => handlePlanOutfit(day)}
                 className="relative aspect-square rounded-lg overflow-hidden bg-rose-100/60 border-2 border-rose-400 hover:bg-rose-100 transition-all active:scale-95"
                 whileTap={{ scale: 0.93 }}
               >
